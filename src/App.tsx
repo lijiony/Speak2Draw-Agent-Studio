@@ -36,7 +36,7 @@ export const App = () => {
     []
   );
 
-  const { status, error, start, stop } = useSpeechInput(handleTranscript);
+  const { status, error, activity, start, stop } = useSpeechInput(handleTranscript);
   const selected = useMemo(() => scene.objects.find((object) => object.id === scene.selectedId), [scene.objects, scene.selectedId]);
 
   return (
@@ -66,7 +66,7 @@ export const App = () => {
           </section>
 
           <aside className="side-panel" aria-label="语音状态">
-            <StatusBlock status={status} error={error} />
+            <StatusBlock status={status} error={error} activity={activity} />
             <InfoBlock title="最近听到" value={lastTranscript} />
             <InfoBlock title="系统反馈" value={lastResult?.message ?? '启动监听后，说出绘图指令。'} />
             <dl className="metrics">
@@ -186,7 +186,7 @@ const SceneObjectView = ({ object, selected }: { object: SceneObject; selected: 
   );
 };
 
-const StatusBlock = ({ status, error }: { status: string; error: ReturnType<typeof useSpeechInput>['error'] }) => {
+const StatusBlock = ({ status, error, activity }: { status: string; error: ReturnType<typeof useSpeechInput>['error']; activity: string }) => {
   const fallbackText =
     status === 'unsupported'
       ? '当前浏览器不支持 Web Speech API'
@@ -203,6 +203,7 @@ const StatusBlock = ({ status, error }: { status: string; error: ReturnType<type
       <div>
         <h2>{error?.title ?? '语音状态'}</h2>
         <p>{error?.message ?? fallbackText}</p>
+        <p className="status-activity">{activity}</p>
         {error?.action ? <p className="status-action">{error.action}</p> : null}
       </div>
     </section>

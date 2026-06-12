@@ -47,6 +47,22 @@ export const mapSpeechError = (error: unknown): SpeechErrorInfo => {
     };
   }
 
+  if (name === 'no-speech') {
+    return {
+      title: '没有检测到语音',
+      message: '麦克风已经打开，但浏览器没有检测到清晰语音。',
+      action: '请靠近麦克风，用普通语速说“画一个红色圆形”，并确认系统输入设备选择正确。'
+    };
+  }
+
+  if (name === 'nomatch') {
+    return {
+      title: '没有识别出文字',
+      message: '浏览器检测到了声音，但没有把它转换成可用文字。',
+      action: '请换一句更短的指令，例如“画一个圆形”或“撤销”。'
+    };
+  }
+
   if (name === 'unsupported') {
     return {
       title: '浏览器不支持语音识别',

@@ -28,4 +28,14 @@ describe('mapSpeechError', () => {
     expect(info.title).toContain('正在运行');
     expect(info.action).toContain('不要连续点击');
   });
+
+  it('识别没有检测到语音的错误', () => {
+    const info = mapSpeechError('no-speech');
+    expect(info.title).toContain('没有检测到语音');
+  });
+
+  it('识别没有匹配到文字的错误', () => {
+    const info = mapSpeechError('nomatch');
+    expect(info.title).toContain('没有识别出文字');
+  });
 });

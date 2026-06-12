@@ -192,6 +192,10 @@ h2 {
   color: #1f2937;
 }
 
+.status-activity {
+  color: #2563eb;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
