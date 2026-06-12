@@ -9,6 +9,15 @@ import { runMicrophoneInputTest, type MicrophoneTestResult } from './voice/micro
 import { useSpeechInput } from './voice/useSpeechInput';
 import { speak } from './voice/voiceFeedback';
 
+declare global {
+  interface Window {
+    __speak2drawTest?: {
+      submitTranscript: (text: string, confidence?: number) => void;
+      getScene: () => SceneState;
+    };
+  }
+}
+
 export const App = () => {
   const [scene, setScene] = useState<SceneState>(() => createEmptyScene());
   const sceneRef = useRef(scene);
@@ -38,6 +47,24 @@ export const App = () => {
     },
     []
   );
+
+  useEffect(() => {
+    if (!isE2eMode()) return;
+    window.__speak2drawTest = {
+      submitTranscript: (text: string, confidence = 0.95) =>
+        handleTranscript({
+          text,
+          confidence,
+          receivedAt: performance.now(),
+          isFinal: true
+        }),
+      getScene: () => sceneRef.current
+    };
+
+    return () => {
+      delete window.__speak2drawTest;
+    };
+  }, [handleTranscript]);
 
   const { status, error, activity, start, stop } = useSpeechInput(handleTranscript);
   const selected = useMemo(() => scene.objects.find((object) => object.id === scene.selectedId), [scene.objects, scene.selectedId]);
@@ -276,3 +303,5 @@ const downloadSvg = (svg: string) => {
   anchor.click();
   URL.revokeObjectURL(url);
 };
+
+const isE2eMode = () => new URLSearchParams(window.location.search).get('e2e') === '1';
