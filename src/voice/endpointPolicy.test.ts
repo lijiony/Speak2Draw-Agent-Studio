@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ENDPOINT_POLICY, ENDPOINT_POLICY_PRESETS, isEndpointPolicyOrdered } from './endpointPolicy';
+import { DEFAULT_ENDPOINT_POLICY, ENDPOINT_POLICY_PRESETS, isEndpointPolicyOrdered, resolveEndpointPolicy } from './endpointPolicy';
 
 describe('EndpointPolicy', () => {
   it('默认策略会先等停顿，再等中间结果稳定，最后才兜底超时', () => {
@@ -11,5 +11,11 @@ describe('EndpointPolicy', () => {
     expect(ENDPOINT_POLICY_PRESETS.fast.speechEndGraceMs).toBeLessThan(
       ENDPOINT_POLICY_PRESETS.patient.speechEndGraceMs
     );
+  });
+
+  it('默认解析为均衡策略', () => {
+    expect(resolveEndpointPolicy()).toBe(DEFAULT_ENDPOINT_POLICY);
+    expect(resolveEndpointPolicy('fast')).toBe(ENDPOINT_POLICY_PRESETS.fast);
+    expect(resolveEndpointPolicy('patient')).toBe(ENDPOINT_POLICY_PRESETS.patient);
   });
 });

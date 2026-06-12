@@ -8,7 +8,8 @@ import { parseIntent } from './domain/intentParser';
 import { createEmptyScene } from './domain/sceneModel';
 import type { ExecutionResult, SceneObject, SceneState, VoiceTranscript } from './domain/types';
 import { runMicrophoneInputTest, type MicrophoneTestResult } from './voice/microphoneTest';
-import { useSpeechInput } from './voice/useSpeechInput';
+import type { EndpointPolicyMode } from './voice/endpointPolicy';
+import { useSpeechInput, type SpeechDiagnostics } from './voice/useSpeechInput';
 import { speak } from './voice/voiceFeedback';
 
 type AiResolutionStatus = {
@@ -27,6 +28,7 @@ declare global {
       getScene: () => SceneState;
       getAiStatus: () => AiResolutionStatus;
       getClarification: () => ClarificationState | null;
+      getVoiceDiagnostics: () => SpeechDiagnostics;
     };
   }
 }
@@ -46,6 +48,8 @@ export const App = () => {
   const [clarification, setClarification] = useState<ClarificationState | null>(null);
   const clarificationRef = useRef<ClarificationState | null>(null);
   const [history, setHistory] = useState<string[]>([]);
+  const voiceDiagnosticsRef = useRef<SpeechDiagnostics | null>(null);
+  const voicePolicyMode = useMemo(() => getVoicePolicyMode(), []);
 
   useEffect(() => {
     sceneRef.current = scene;
@@ -136,7 +140,8 @@ export const App = () => {
         }),
       getScene: () => sceneRef.current,
       getAiStatus: () => aiStatusRef.current,
-      getClarification: () => clarificationRef.current
+      getClarification: () => clarificationRef.current,
+      getVoiceDiagnostics: () => voiceDiagnosticsRef.current ?? EMPTY_VOICE_DIAGNOSTICS
     };
 
     return () => {
@@ -144,8 +149,12 @@ export const App = () => {
     };
   }, [handleTranscript]);
 
-  const { status, error, activity, start, stop } = useSpeechInput(handleTranscript);
+  const { status, error, activity, diagnostics, start, stop } = useSpeechInput(handleTranscript, { policyMode: voicePolicyMode });
   const selected = useMemo(() => scene.objects.find((object) => object.id === scene.selectedId), [scene.objects, scene.selectedId]);
+
+  useEffect(() => {
+    voiceDiagnosticsRef.current = diagnostics;
+  }, [diagnostics]);
 
   const handleMicrophoneTest = useCallback(async () => {
     if (status === 'listening' || status === 'starting') stop();
@@ -397,3 +406,16 @@ const downloadSvg = (svg: string) => {
 };
 
 const isE2eMode = () => new URLSearchParams(window.location.search).get('e2e') === '1';
+const getVoicePolicyMode = (): EndpointPolicyMode => {
+  const mode = new URLSearchParams(window.location.search).get('voicePolicy');
+  return mode === 'fast' || mode === 'patient' || mode === 'balanced' ? mode : 'balanced';
+};
+
+const EMPTY_VOICE_DIAGNOSTICS: SpeechDiagnostics = {
+  policyMode: 'balanced',
+  phase: 'idle',
+  interimText: null,
+  finalText: null,
+  reason: null,
+  updatedAt: 0
+};

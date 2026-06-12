@@ -6,6 +6,8 @@ export interface EndpointPolicy {
   restartDelayMs: number;
 }
 
+export type EndpointPolicyMode = 'fast' | 'balanced' | 'patient';
+
 export const DEFAULT_ENDPOINT_POLICY: EndpointPolicy = {
   noSpeechTimeoutMs: 12000,
   speechEndGraceMs: 2800,
@@ -30,9 +32,11 @@ export const ENDPOINT_POLICY_PRESETS = {
     finalResultTimeoutMs: 13000,
     restartDelayMs: 350
   }
-} satisfies Record<string, EndpointPolicy>;
+} satisfies Record<EndpointPolicyMode, EndpointPolicy>;
 
 export const isEndpointPolicyOrdered = (policy: EndpointPolicy) =>
   policy.speechEndGraceMs < policy.interimStabilityMs &&
   policy.interimStabilityMs < policy.finalResultTimeoutMs &&
   policy.restartDelayMs < policy.speechEndGraceMs;
+
+export const resolveEndpointPolicy = (mode: EndpointPolicyMode = 'balanced') => ENDPOINT_POLICY_PRESETS[mode];
