@@ -77,6 +77,7 @@ const createCommand = (shape: ShapeKind, intent: DrawingIntent): DrawingCommand 
   type: 'create_object',
   object: createSceneObject(shape, {
     id: createId(),
+    name: intent.name,
     x: intent.position?.x,
     y: intent.position?.y,
     fill: intent.color,
@@ -174,7 +175,7 @@ const createGenericShapeCommands = (text: string): DrawingCommand[] => {
     const position = genericShapePosition(index, items.length, item.shape);
     const color = detectColor(item.segment);
     return objectCommand(item.shape, {
-      name: shapeLabel(item.shape),
+      name: detectCustomName(item.segment) ?? shapeLabel(item.shape),
       x: position.x,
       y: position.y,
       fill: item.shape === 'line' ? 'none' : color,
@@ -211,6 +212,12 @@ const shapeLabel = (shape: ShapeKind) => {
     text: '文字'
   };
   return labels[shape];
+};
+
+const detectCustomName = (text: string) => {
+  const match = text.match(/(?:叫|命名为|名字叫|名称叫)([^，。,.、\s]+)/);
+  const name = match?.[1]?.trim();
+  return name || undefined;
 };
 
 const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector']) =>

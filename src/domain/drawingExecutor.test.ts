@@ -57,6 +57,25 @@ describe('voice drawing flow', () => {
     expect(result.scene.objects.map((object) => object.style.fill)).toEqual(['#2563eb', '#16a34a']);
   });
 
+  it('支持创建后按自定义名称编辑对象', () => {
+    resetCommandIdsForTest();
+    const createInput = transcript('画一个蓝色圆形叫月亮');
+    const created = executeDrawingCommands(
+      createEmptyScene(),
+      planCommands(parseIntent(createInput), createEmptyScene()).commands,
+      createInput
+    );
+
+    const updateInput = transcript('把月亮改成红色');
+    const updatePlan = planCommands(parseIntent(updateInput), created.scene);
+    const updated = executeDrawingCommands(created.scene, updatePlan.commands, updateInput, updatePlan);
+
+    expect(created.scene.objects[0].name).toBe('月亮');
+    expect(updated.ok).toBe(true);
+    expect(updated.scene.objects[0].name).toBe('月亮');
+    expect(updated.scene.objects[0].style.fill).toBe('#ef4444');
+  });
+
   it('按对象名称调整图层顺序', () => {
     resetCommandIdsForTest();
     const createInput = transcript('画一个房子和太阳');

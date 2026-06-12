@@ -81,6 +81,7 @@ export interface DrawingIntent {
   intents?: DrawingIntent[];
   shape?: ShapeKind;
   color?: string;
+  name?: string;
   strokeColor?: string;
   strokeWidth?: number;
   position?: PositionHint;

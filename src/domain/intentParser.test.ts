@@ -17,6 +17,14 @@ describe('parseIntent', () => {
     expect(intent.color).toBe('#ef4444');
   });
 
+  it('解析创建时的自定义对象名称', () => {
+    const intent = parseIntent(transcript('画一个蓝色圆形叫月亮'));
+    expect(intent.type).toBe('create_shape');
+    expect(intent.shape).toBe('circle');
+    expect(intent.color).toBe('#2563eb');
+    expect(intent.name).toBe('月亮');
+  });
+
   it('解析移动和导出指令', () => {
     expect(parseIntent(transcript('向右移动一点')).direction).toBe('right');
     expect(parseIntent(transcript('导出图片')).type).toBe('export_canvas');
@@ -37,6 +45,17 @@ describe('parseIntent', () => {
     expect(intent.type).toBe('select_object');
     expect(intent.selector?.mode).toBe('by_name');
     expect(intent.selector?.name).toBe('房子');
+  });
+
+  it('支持按自定义对象名称选择和编辑', () => {
+    const selected = parseIntent(transcript('选择月亮'));
+    expect(selected.type).toBe('select_object');
+    expect(selected.selector).toMatchObject({ mode: 'by_name', name: '月亮' });
+
+    const updated = parseIntent(transcript('把月亮改成红色'));
+    expect(updated.type).toBe('update_style');
+    expect(updated.selector).toMatchObject({ mode: 'by_name', name: '月亮' });
+    expect(updated.color).toBe('#ef4444');
   });
 
   it('选择红色圆形时使用形状和颜色选择器', () => {

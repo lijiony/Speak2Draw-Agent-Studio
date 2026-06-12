@@ -46,6 +46,14 @@ describe('planCommands', () => {
     expect(plan.commands.map((command) => command.object?.style.fill)).toEqual(['#2563eb', '#16a34a']);
   });
 
+  it('创建图形时会保留自定义对象名称', () => {
+    const single = planCommands(parseIntent(transcript('画一个蓝色圆形叫月亮')), createEmptyScene());
+    expect(single.commands[0].object?.name).toBe('月亮');
+
+    const combo = planCommands(parseIntent(transcript('画一个蓝色圆形叫月亮和绿色矩形叫草地')), createEmptyScene());
+    expect(combo.commands.map((command) => command.object?.name)).toEqual(['月亮', '草地']);
+  });
+
   it('目标对象不存在时，按名称编辑会要求澄清', () => {
     const scene = applyCommand(createEmptyScene(), {
       type: 'create_object',

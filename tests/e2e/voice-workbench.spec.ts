@@ -68,6 +68,24 @@ test('普通多图形组合会按形状和颜色创建', async ({ page }) => {
   expect(consoleErrors).toEqual([]);
 });
 
+test('可以通过语音给图形命名并按名称编辑', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个蓝色圆形叫月亮');
+  await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects[0]?.name)).toBe('月亮');
+  await expect(page.locator('svg circle[fill="#2563eb"]')).toHaveCount(1);
+
+  await submitVoiceText(page, '把月亮改成红色');
+  await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
+  await expect(page.locator('svg circle[fill="#ef4444"]')).toHaveCount(1);
+
+  await submitVoiceText(page, '画布里有什么');
+  await expect(systemFeedback(page)).toContainText('月亮');
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test('撤销会回退整条复杂语音命令', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 

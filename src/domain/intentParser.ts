@@ -127,6 +127,7 @@ const parseNormalizedIntent = (rawText: string, text: string, allowSequence: boo
       rawText,
       shape,
       color: detectColor(text),
+      name: shape === 'text' ? undefined : extractCustomName(text),
       position: detectPosition(text),
       text: shape === 'text' ? extractText(rawText) : undefined
     };
@@ -149,6 +150,8 @@ const detectObjectName = (text: string) => {
   if (text.includes('太阳')) return '太阳';
   if (text.includes('树')) return '树';
   if (text.includes('机器人')) return '机器人';
+  const customName = extractTargetName(text) ?? extractCustomName(text);
+  if (customName && !isPronoun(customName)) return customName;
   return undefined;
 };
 
@@ -233,6 +236,24 @@ const extractText = (rawText: string) => {
   const content = match?.[1]?.trim().replace(/^(文字|文本|内容是|为)/, '');
   return content || '文字';
 };
+
+const extractCustomName = (text: string) => {
+  const match = text.match(/(?:叫|命名为|名字叫|名称叫)([^，。,.、\s]+)/);
+  return sanitizeName(match?.[1]);
+};
+
+const extractTargetName = (text: string) => {
+  const byPrefix = text.match(/(?:选择|选中|选一下|找到|定位到|删除|删掉|移除|去掉|擦掉|放大|缩小)([^，。,.、\s]+)/);
+  const byObjectMarker = text.match(/(?:把|将)(.+?)(?:改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点|移动|挪|放到|移到|放大|变大|缩小|变小|置顶|顶层|最上层|最前面|置底|底层|最下层|最后面|前移|后移|删除|删掉|移除|去掉|擦掉)/);
+  return sanitizeName(byPrefix?.[1] ?? byObjectMarker?.[1]);
+};
+
+const sanitizeName = (name?: string) => {
+  const value = name?.trim().replace(/^(一个|一只|一条|这个|那个|它|他|她)/, '').replace(/(图形|对象)$/, '');
+  return value && !isPronoun(value) ? value : undefined;
+};
+
+const isPronoun = (value: string) => ['它', '他', '她', '这个', '那个', '选中', '最后', '刚才'].includes(value);
 
 const clarify = (rawText: string, reason: string): DrawingIntent => ({
   type: 'clarify',
