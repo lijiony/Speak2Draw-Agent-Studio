@@ -77,4 +77,16 @@ describe('voice drawing flow', () => {
     expect(sun?.style.fill).toBe('#2563eb');
     expect(result.scene.objects[result.scene.objects.length - 1]?.name).toContain('房子');
   });
+
+  it('执行只读语音查询时不修改画布', () => {
+    const scene = createEmptyScene();
+    const input = transcript('我能说什么');
+    const plan = planCommands(parseIntent(input), scene);
+    const result = executeDrawingCommands(scene, plan.commands, input, plan);
+
+    expect(result.ok).toBe(true);
+    expect(result.commandsExecuted).toBe(0);
+    expect(result.scene).toBe(scene);
+    expect(result.message).toContain('可以说');
+  });
 });

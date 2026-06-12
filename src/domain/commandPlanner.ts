@@ -13,6 +13,12 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
   switch (intent.type) {
     case 'sequence':
       return planSequenceCommands(intent.intents ?? [], scene);
+    case 'help':
+      return { commands: [], message: HELP_MESSAGE };
+    case 'describe_scene':
+      return { commands: [], message: describeScene(scene) };
+    case 'describe_selection':
+      return { commands: [], message: describeSelection(scene) };
     case 'clarify':
       return { commands: [], message: intent.reason ?? '请再说一遍。', needsClarification: true };
     case 'unknown':
@@ -147,6 +153,45 @@ const objectCommand = (
 
 const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector']) =>
   Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId));
+
+const HELP_MESSAGE =
+  '可以说：画一个红色圆形、画一个房子和太阳、选择太阳、把它改成黄色、向右移动一点、撤销、导出图片，或问我画布里有什么。';
+
+const describeScene = (scene: SceneState) => {
+  if (scene.objects.length === 0) return '画布目前是空的。可以先说“画一个红色圆形”。';
+  const names = scene.objects.map((object) => object.name);
+  const visibleNames = names.slice(0, 6).join('、');
+  const countText = names.length > 6 ? `${names.length} 个图形，其中包括` : `${names.length} 个图形`;
+  const selected = scene.selectedId ? scene.objects.find((object) => object.id === scene.selectedId)?.name : null;
+  return `画布里有 ${countText}：${visibleNames}。当前选中：${selected ?? '无'}。`;
+};
+
+const describeSelection = (scene: SceneState) => {
+  const selected = scene.selectedId ? scene.objects.find((object) => object.id === scene.selectedId) : null;
+  if (!selected) return '当前没有明确选中图形。可以说“选择最后一个图形”。';
+  return `当前选中：${selected.name}，颜色 ${colorLabel(selected.style.fill)}，位置 ${Math.round(selected.x)}、${Math.round(selected.y)}。`;
+};
+
+const colorLabel = (color: string) => {
+  const labels: Record<string, string> = {
+    '#ef4444': '红色',
+    '#2563eb': '蓝色',
+    '#16a34a': '绿色',
+    '#facc15': '黄色',
+    '#111827': '黑色',
+    '#ffffff': '白色',
+    '#7c3aed': '紫色',
+    '#f97316': '橙色',
+    '#6b7280': '灰色',
+    '#ec4899': '粉色',
+    '#fef3c7': '浅黄色',
+    '#92400e': '棕色',
+    '#bfdbfe': '浅蓝色',
+    '#d1d5db': '浅灰色',
+    '#e5e7eb': '浅灰色'
+  };
+  return labels[color] ?? color;
+};
 
 const detectEntityColor = (text: string, entity: string) => {
   const entityIndex = text.indexOf(entity);

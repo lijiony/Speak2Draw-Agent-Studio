@@ -81,4 +81,21 @@ describe('planCommands', () => {
       layer: 'front'
     });
   });
+
+  it('纯语音查询会生成只读反馈', () => {
+    const emptyHelp = planCommands({ type: 'describe_scene', rawText: '画布里有什么' }, createEmptyScene());
+    expect(emptyHelp.commands).toHaveLength(0);
+    expect(emptyHelp.message).toContain('画布目前是空的');
+
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('circle', { id: 'shape-1', name: '红色圆形', fill: '#ef4444', x: 120, y: 80 })
+    });
+    const scenePlan = planCommands({ type: 'describe_scene', rawText: '画布里有什么' }, scene);
+    const selectionPlan = planCommands({ type: 'describe_selection', rawText: '当前选中的是什么' }, scene);
+
+    expect(scenePlan.message).toContain('画布里有 1 个图形：红色圆形');
+    expect(selectionPlan.message).toContain('当前选中：红色圆形');
+    expect(selectionPlan.message).toContain('颜色 红色');
+  });
 });

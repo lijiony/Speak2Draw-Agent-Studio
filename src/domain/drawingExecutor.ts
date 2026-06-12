@@ -8,7 +8,7 @@ export const executeDrawingCommands = (
   transcript: VoiceTranscript,
   options?: { message?: string; needsClarification?: boolean }
 ): ExecutionResult => {
-  if (options?.needsClarification || commands.length === 0) {
+  if (options?.needsClarification) {
     return {
       ok: false,
       message: options?.message ?? '需要更多信息才能执行。',
@@ -16,6 +16,16 @@ export const executeDrawingCommands = (
       commandsExecuted: 0,
       latencyMs: measureLatency(transcript),
       needsClarification: true
+    };
+  }
+
+  if (commands.length === 0) {
+    return {
+      ok: true,
+      message: options?.message ?? '已收到语音指令。',
+      scene,
+      commandsExecuted: 0,
+      latencyMs: measureLatency(transcript)
     };
   }
 

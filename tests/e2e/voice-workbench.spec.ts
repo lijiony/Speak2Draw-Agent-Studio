@@ -53,6 +53,25 @@ test('复合长句可以一次完成创建和图层调整', async ({ page }) => 
   expect(consoleErrors).toEqual([]);
 });
 
+test('纯语音查询可以返回帮助和画布状态', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '我能说什么');
+  await expect(systemFeedback(page)).toContainText('可以说');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(0);
+
+  await submitVoiceText(page, '画一个蓝色圆形');
+  await submitVoiceText(page, '画布里有什么');
+  await expect(systemFeedback(page)).toContainText('画布里有 1 个图形');
+  await expect(systemFeedback(page)).toContainText('圆形');
+
+  await submitVoiceText(page, '当前选中的是什么');
+  await expect(systemFeedback(page)).toContainText('当前选中：圆形');
+  await expect(systemFeedback(page)).toContainText('颜色 蓝色');
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test('语音文本归一化不会破坏文字输入', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 

@@ -3,6 +3,9 @@ export type LayerDirection = 'front' | 'back' | 'forward' | 'backward';
 
 export type DrawingIntentType =
   | 'sequence'
+  | 'help'
+  | 'describe_scene'
+  | 'describe_selection'
   | 'create_shape'
   | 'create_complex_scene'
   | 'select_object'

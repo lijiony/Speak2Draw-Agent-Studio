@@ -53,6 +53,14 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
 };
 
 const parseNormalizedIntent = (rawText: string, text: string, allowSequence: boolean): DrawingIntent => {
+  if (/(帮助|怎么用|使用说明|可用指令|有哪些指令|我能说什么|能说什么)/.test(text)) return { type: 'help', rawText };
+  if (/(画布里有什么|画布有什么|现在有什么|当前画布|描述画布|有哪些图形|图形列表|画面里有什么)/.test(text)) {
+    return { type: 'describe_scene', rawText };
+  }
+  if (/(当前选中|选中的是什么|我选中了什么|现在选中|选择的是谁|选中哪个)/.test(text)) {
+    return { type: 'describe_selection', rawText };
+  }
+
   if (/(撤销|取消上一步|退回|撤回)/.test(text)) return { type: 'undo', rawText };
   if (/(重做|恢复上一步|再做一次)/.test(text)) return { type: 'redo', rawText };
   if (/(清空|清除画布|全部删除|重新开始)/.test(text)) return { type: 'clear_canvas', rawText };

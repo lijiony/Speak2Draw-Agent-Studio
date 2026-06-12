@@ -104,4 +104,10 @@ describe('parseIntent', () => {
     expect(intent.intents?.[1].selector).toMatchObject({ mode: 'by_name', name: '房子' });
     expect(intent.intents?.[1].layer).toBe('front');
   });
+
+  it('解析纯语音帮助和状态查询', () => {
+    expect(parseIntent(transcript('我能说什么')).type).toBe('help');
+    expect(parseIntent(transcript('画布里有什么')).type).toBe('describe_scene');
+    expect(parseIntent(transcript('当前选中的是什么')).type).toBe('describe_selection');
+  });
 });
