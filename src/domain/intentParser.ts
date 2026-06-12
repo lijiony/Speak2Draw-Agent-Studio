@@ -99,7 +99,7 @@ const parseNormalizedIntent = (rawText: string, text: string, allowSequence: boo
   if (resize) return { type: 'resize_object', rawText, selector: detectTargetSelector(text, true), scale: resize };
 
   const direction = detectDirection(text);
-  if (/(移动|挪|放到|移到|向左|向右|向上|向下|往左|往右|往上|往下|中间|左上|右上|左下|右下)/.test(text) && direction) {
+  if (/(移动|挪|放到|移到|左移|右移|上移|下移|向左|向右|向上|向下|往左|往右|往上|往下|中间|左上|右上|左下|右下)/.test(text) && direction) {
     return { type: 'move_object', rawText, selector: detectTargetSelector(text, true), direction };
   }
 
@@ -244,12 +244,17 @@ const extractCustomName = (text: string) => {
 
 const extractTargetName = (text: string) => {
   const byPrefix = text.match(/(?:选择|选中|选一下|找到|定位到|删除|删掉|移除|去掉|擦掉|放大|缩小)([^，。,.、\s]+)/);
-  const byObjectMarker = text.match(/(?:把|将)(.+?)(?:改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点|移动|挪|放到|移到|放大|变大|缩小|变小|置顶|顶层|最上层|最前面|置底|底层|最下层|最后面|前移|后移|删除|删掉|移除|去掉|擦掉)/);
+  const byObjectMarker = text.match(/(?:把|将)(.+?)(?:改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点|移动|挪|放到|移到|左移|右移|上移|下移|放大|变大|缩小|变小|置顶|顶层|最上层|最前面|置底|底层|最下层|最后面|前移|后移|删除|删掉|移除|去掉|擦掉)/);
   return sanitizeName(byPrefix?.[1] ?? byObjectMarker?.[1]);
 };
 
 const sanitizeName = (name?: string) => {
-  const value = name?.trim().replace(/^(一个|一只|一条|这个|那个|它|他|她)/, '').replace(/(图形|对象)$/, '');
+  const value = name
+    ?.trim()
+    .replace(/^(一个|一只|一条|这个|那个|它|他|她)/, '')
+    .replace(/(向左|向右|向上|向下|往左|往右|往上|往下|左移|右移|上移|下移|左边|右边|上面|下面|左上|右上|左下|右下|中间|居中|中央)$/, '')
+    .replace(/(向|往)$/, '')
+    .replace(/(图形|对象)$/, '');
   return value && !isPronoun(value) ? value : undefined;
 };
 

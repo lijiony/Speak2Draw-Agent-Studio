@@ -58,6 +58,18 @@ describe('parseIntent', () => {
     expect(updated.color).toBe('#ef4444');
   });
 
+  it('支持按自定义对象名称移动', () => {
+    const moved = parseIntent(transcript('把月亮向右移动一点'));
+    expect(moved.type).toBe('move_object');
+    expect(moved.selector).toMatchObject({ mode: 'by_name', name: '月亮' });
+    expect(moved.direction).toBe('right');
+
+    const shortMoved = parseIntent(transcript('把月亮右移一点'));
+    expect(shortMoved.type).toBe('move_object');
+    expect(shortMoved.selector).toMatchObject({ mode: 'by_name', name: '月亮' });
+    expect(shortMoved.direction).toBe('right');
+  });
+
   it('选择红色圆形时使用形状和颜色选择器', () => {
     const intent = parseIntent(transcript('选择红色圆形'));
     expect(intent.type).toBe('select_object');

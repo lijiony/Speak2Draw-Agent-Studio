@@ -4,7 +4,7 @@ declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => void;
-      getScene: () => { objects: Array<{ name: string; kind: string; style: { fill: string } }> };
+      getScene: () => { objects: Array<{ name: string; kind: string; x: number; style: { fill: string } }> };
     };
   }
 }
@@ -79,6 +79,12 @@ test('可以通过语音给图形命名并按名称编辑', async ({ page }) => 
   await submitVoiceText(page, '把月亮改成红色');
   await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
   await expect(page.locator('svg circle[fill="#ef4444"]')).toHaveCount(1);
+
+  const beforeMoveX = await page.evaluate(() => window.__speak2drawTest?.getScene().objects[0]?.x ?? 0);
+  await submitVoiceText(page, '把月亮向右移动一点');
+  await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
+  const afterMoveX = await page.evaluate(() => window.__speak2drawTest?.getScene().objects[0]?.x ?? 0);
+  expect(afterMoveX).toBeGreaterThan(beforeMoveX);
 
   await submitVoiceText(page, '画布里有什么');
   await expect(systemFeedback(page)).toContainText('月亮');
