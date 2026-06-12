@@ -4,7 +4,7 @@ declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => void;
-      getScene: () => { objects: Array<{ name: string }> };
+      getScene: () => { objects: Array<{ name: string; kind: string; style: { fill: string } }> };
     };
   }
 }
@@ -50,6 +50,21 @@ test('复合长句可以一次完成创建和图层调整', async ({ page }) => 
   const objectNames = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? []);
   expect(objectNames).toHaveLength(5);
   expect(objectNames[objectNames.length - 1]).toContain('房子');
+  expect(consoleErrors).toEqual([]);
+});
+
+test('普通多图形组合会按形状和颜色创建', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个蓝色圆形和绿色矩形');
+  await expect(systemFeedback(page)).toContainText('已拆解并执行 2 个绘图步骤。');
+  await expect(page.locator('svg circle[fill="#2563eb"]')).toHaveCount(1);
+  await expect(page.locator('svg rect[fill="#16a34a"]')).toHaveCount(1);
+
+  const objects = await page.evaluate(() => window.__speak2drawTest?.getScene().objects ?? []);
+  expect(objects).toHaveLength(2);
+  expect(objects.map((object) => object.kind)).toEqual(['circle', 'rectangle']);
+  expect(objects.map((object) => object.style.fill)).toEqual(['#2563eb', '#16a34a']);
   expect(consoleErrors).toEqual([]);
 });
 

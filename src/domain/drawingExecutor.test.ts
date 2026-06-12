@@ -44,6 +44,19 @@ describe('voice drawing flow', () => {
     expect(updated.scene.objects.filter((object) => object.name.includes('房子'))).toHaveLength(4);
   });
 
+  it('执行普通多图形组合语音指令', () => {
+    resetCommandIdsForTest();
+    const input = transcript('画一个蓝色圆形和绿色矩形');
+    const plan = planCommands(parseIntent(input), createEmptyScene());
+    const result = executeDrawingCommands(createEmptyScene(), plan.commands, input, plan);
+
+    expect(result.ok).toBe(true);
+    expect(result.message).toBe('已拆解并执行 2 个绘图步骤。');
+    expect(result.scene.objects).toHaveLength(2);
+    expect(result.scene.objects.map((object) => object.kind)).toEqual(['circle', 'rectangle']);
+    expect(result.scene.objects.map((object) => object.style.fill)).toEqual(['#2563eb', '#16a34a']);
+  });
+
   it('按对象名称调整图层顺序', () => {
     resetCommandIdsForTest();
     const createInput = transcript('画一个房子和太阳');

@@ -1,7 +1,7 @@
 import { applyCommands, CANVAS_HEIGHT, CANVAS_WIDTH, createSceneObject, findObject } from './sceneModel';
 import type { DrawingCommand, DrawingIntent, SceneState, ShapeKind } from './types';
 import { normalizeVoiceText } from './voiceText';
-import { detectColor } from './intentParser';
+import { detectColor, detectShape } from './intentParser';
 
 let nextId = 1;
 
@@ -122,6 +122,9 @@ const createComplexCommands = (rawText: string): DrawingCommand[] => {
 
   if (commands.length > 0) return commands;
 
+  const genericShapeCommands = createGenericShapeCommands(text);
+  if (genericShapeCommands.length > 0) return genericShapeCommands;
+
   return [
     objectCommand('circle', { name: '圆形', x: CANVAS_WIDTH / 2 - 150, y: CANVAS_HEIGHT / 2 - 80, fill: '#60a5fa' }),
     objectCommand('rectangle', { name: '矩形', x: CANVAS_WIDTH / 2 + 20, y: CANVAS_HEIGHT / 2 - 70, fill: '#f97316' })
@@ -158,6 +161,57 @@ const objectCommand = (
   type: 'create_object',
   object: createSceneObject(shape, { id: createId(), ...options })
 });
+
+const createGenericShapeCommands = (text: string): DrawingCommand[] => {
+  const items = splitShapeItems(text)
+    .map((segment) => ({
+      segment,
+      shape: detectShape(segment)
+    }))
+    .filter((item): item is { segment: string; shape: ShapeKind } => Boolean(item.shape));
+
+  return items.map((item, index) => {
+    const position = genericShapePosition(index, items.length, item.shape);
+    const color = detectColor(item.segment);
+    return objectCommand(item.shape, {
+      name: shapeLabel(item.shape),
+      x: position.x,
+      y: position.y,
+      fill: item.shape === 'line' ? 'none' : color,
+      stroke: item.shape === 'line' ? color ?? '#111827' : '#111827',
+      text: item.shape === 'text' ? '文字' : undefined
+    });
+  });
+};
+
+const splitShapeItems = (text: string) =>
+  text
+    .replace(/^(画|添加|创建|绘制|生成|来一个)+/, '')
+    .split(/和|还有|同时|一起|加上/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+const genericShapePosition = (index: number, total: number, shape: ShapeKind) => {
+  const spacing = 190;
+  const size = shape === 'line' ? { width: 180, height: 8 } : shape === 'triangle' ? { width: 150, height: 130 } : { width: 140, height: 100 };
+  const startX = CANVAS_WIDTH / 2 - ((total - 1) * spacing) / 2 - size.width / 2;
+  return {
+    x: clamp(startX + index * spacing, 48, CANVAS_WIDTH - size.width - 48),
+    y: CANVAS_HEIGHT / 2 - size.height / 2
+  };
+};
+
+const shapeLabel = (shape: ShapeKind) => {
+  const labels: Record<ShapeKind, string> = {
+    circle: '圆形',
+    rectangle: '矩形',
+    ellipse: '椭圆',
+    line: '线条',
+    triangle: '三角形',
+    text: '文字'
+  };
+  return labels[shape];
+};
 
 const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector']) =>
   Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId));
@@ -226,4 +280,5 @@ const compactStyleUpdate = (updates: { style: { fill?: string; stroke?: string; 
 
 const hasStyleUpdate = (updates: ReturnType<typeof compactStyleUpdate>) => Object.keys(updates.style).length > 0;
 
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const createId = () => `shape-${nextId++}`;

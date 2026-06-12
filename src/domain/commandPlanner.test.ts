@@ -36,6 +36,16 @@ describe('planCommands', () => {
     expect(objectNames).toContain('太阳');
   });
 
+  it('普通多图形组合会按形状和颜色拆解', () => {
+    const intent = parseIntent(transcript('画一个蓝色圆形和绿色矩形'));
+    const plan = planCommands(intent, createEmptyScene());
+
+    expect(intent.type).toBe('create_complex_scene');
+    expect(plan.commands).toHaveLength(2);
+    expect(plan.commands.map((command) => command.object?.kind)).toEqual(['circle', 'rectangle']);
+    expect(plan.commands.map((command) => command.object?.style.fill)).toEqual(['#2563eb', '#16a34a']);
+  });
+
   it('目标对象不存在时，按名称编辑会要求澄清', () => {
     const scene = applyCommand(createEmptyScene(), {
       type: 'create_object',
