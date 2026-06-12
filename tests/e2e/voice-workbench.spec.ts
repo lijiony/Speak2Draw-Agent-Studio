@@ -56,6 +56,20 @@ test('语音文本可以驱动复杂绘图和按名称编辑', async ({ page }) 
   expect(consoleErrors).toEqual([]);
 });
 
+test('展示级控制台快捷按钮可以触发语音命令', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.getByRole('button', { name: '画太阳' }).click();
+  await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
+  await expect(page.locator('svg circle[fill="#facc15"]')).toHaveCount(1);
+
+  await page.getByRole('button', { name: '撤销' }).first().click();
+  await expect(systemFeedback(page)).toContainText('已撤销上一步。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(0);
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test('复合长句可以一次完成创建和图层调整', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 
