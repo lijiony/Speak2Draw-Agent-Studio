@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { planCommands, resetCommandIdsForTest } from './commandPlanner';
-import { createEmptyScene } from './sceneModel';
+import { applyCommand, createEmptyScene, createSceneObject } from './sceneModel';
 import type { DrawingIntent } from './types';
 
 describe('planCommands', () => {
@@ -26,5 +26,22 @@ describe('planCommands', () => {
 
     expect(objectNames.some((name) => name.includes('房子'))).toBe(true);
     expect(objectNames).toContain('太阳');
+  });
+
+  it('目标对象不存在时，按名称编辑会要求澄清', () => {
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('circle', { id: 'shape-1', name: '圆形' })
+    });
+    const intent: DrawingIntent = {
+      type: 'update_style',
+      rawText: '把太阳改成红色',
+      selector: { mode: 'by_name', name: '太阳' },
+      color: '#ef4444'
+    };
+
+    const plan = planCommands(intent, scene);
+    expect(plan.needsClarification).toBe(true);
+    expect(plan.commands).toHaveLength(0);
   });
 });

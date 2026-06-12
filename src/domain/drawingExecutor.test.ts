@@ -25,4 +25,22 @@ describe('voice drawing flow', () => {
     expect(result.scene.objects[0].kind).toBe('circle');
     expect(result.scene.objects[0].style.fill).toBe('#ef4444');
   });
+
+  it('按对象名称修改复杂场景中的目标图形', () => {
+    resetCommandIdsForTest();
+    const createInput = transcript('画一个房子和太阳');
+    const createIntent = parseIntent(createInput);
+    const createPlan = planCommands(createIntent, createEmptyScene());
+    const created = executeDrawingCommands(createEmptyScene(), createPlan.commands, createInput, createPlan);
+
+    const updateInput = transcript('把太阳改成红色');
+    const updateIntent = parseIntent(updateInput);
+    const updatePlan = planCommands(updateIntent, created.scene);
+    const updated = executeDrawingCommands(created.scene, updatePlan.commands, updateInput, updatePlan);
+    const sun = updated.scene.objects.find((object) => object.name === '太阳');
+
+    expect(updated.ok).toBe(true);
+    expect(sun?.style.fill).toBe('#ef4444');
+    expect(updated.scene.objects.filter((object) => object.name.includes('房子'))).toHaveLength(4);
+  });
 });

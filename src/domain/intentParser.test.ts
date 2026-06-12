@@ -71,4 +71,16 @@ describe('parseIntent', () => {
     expect(intent.shape).toBe('text');
     expect(intent.text).toBe('名字');
   });
+
+  it('编辑指令支持按对象名称指定目标', () => {
+    const intent = parseIntent(transcript('把太阳改成红色'));
+    expect(intent.type).toBe('update_style');
+    expect(intent.selector).toMatchObject({ mode: 'by_name', name: '太阳' });
+    expect(intent.color).toBe('#ef4444');
+  });
+
+  it('删除和缩放指令支持按对象名称指定目标', () => {
+    expect(parseIntent(transcript('删除太阳')).selector).toMatchObject({ mode: 'by_name', name: '太阳' });
+    expect(parseIntent(transcript('放大机器人')).selector).toMatchObject({ mode: 'by_name', name: '机器人' });
+  });
 });

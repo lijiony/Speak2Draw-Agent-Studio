@@ -1,4 +1,4 @@
-import type { DrawingIntent, ShapeKind, VoiceTranscript } from './types';
+import type { DrawingIntent, ObjectSelector, ShapeKind, VoiceTranscript } from './types';
 import { includesAny, normalizeVoiceText } from './voiceText';
 
 const COLORS: Record<string, string> = {
@@ -53,7 +53,9 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
   if (/(重做|恢复上一步|再做一次)/.test(text)) return { type: 'redo', rawText };
   if (/(清空|清除画布|全部删除|重新开始)/.test(text)) return { type: 'clear_canvas', rawText };
   if (/(导出|保存图片|下载图片|保存作品)/.test(text)) return { type: 'export_canvas', rawText };
-  if (/(删除|删掉|移除|去掉|擦掉)/.test(text)) return { type: 'delete_object', rawText, selector: { mode: 'selected' } };
+  if (/(删除|删掉|移除|去掉|擦掉)/.test(text)) {
+    return { type: 'delete_object', rawText, selector: detectTargetSelector(text, true) };
+  }
 
   if (/(选择|选中|选一下|找到|定位到)/.test(text)) {
     const shape = detectShape(text);
@@ -73,11 +75,11 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
   }
 
   const resize = detectResize(text);
-  if (resize) return { type: 'resize_object', rawText, selector: { mode: 'selected' }, scale: resize };
+  if (resize) return { type: 'resize_object', rawText, selector: detectTargetSelector(text, true), scale: resize };
 
   const direction = detectDirection(text);
   if (/(移动|挪|放到|移到|向左|向右|向上|向下|往左|往右|往上|往下|中间|左上|右上|左下|右下)/.test(text) && direction) {
-    return { type: 'move_object', rawText, selector: { mode: 'selected' }, direction };
+    return { type: 'move_object', rawText, selector: detectTargetSelector(text, true), direction };
   }
 
   if (/(改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点)/.test(text)) {
@@ -89,7 +91,7 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
       color,
       strokeColor: text.includes('描边') ? color : undefined,
       strokeWidth,
-      selector: { mode: 'selected' }
+      selector: detectTargetSelector(text, false)
     };
   }
 
@@ -127,6 +129,16 @@ const detectObjectName = (text: string) => {
   if (text.includes('树')) return '树';
   if (text.includes('机器人')) return '机器人';
   return undefined;
+};
+
+const detectTargetSelector = (text: string, allowShapeColor: boolean): ObjectSelector => {
+  const name = detectObjectName(text);
+  if (name) return { mode: 'by_name', name };
+  if (!allowShapeColor) return { mode: 'selected' };
+
+  const shape = detectShape(text);
+  const color = detectColor(text);
+  return shape || color ? { mode: 'by_shape_color', shape, color } : { mode: 'selected' };
 };
 
 const detectComplexScene = (text: string, rawText: string): DrawingIntent | null => {

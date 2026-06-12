@@ -25,7 +25,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
         : { commands: [], message: '没有找到符合条件的图形，请换一种说法。', needsClarification: true };
     }
     case 'update_style': {
-      if (!hasEditableTarget(scene)) return noTarget();
+      if (!hasEditableTarget(scene, intent.selector)) return noTarget();
       const updates = {
         style: {
           fill: intent.strokeColor ? undefined : intent.color,
@@ -36,11 +36,11 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       return { commands: [{ type: 'update_object', selector: intent.selector, updates: compactStyleUpdate(updates) }] };
     }
     case 'move_object':
-      return hasEditableTarget(scene) ? { commands: [{ type: 'move_object', selector: intent.selector, direction: intent.direction }] } : noTarget();
+      return hasEditableTarget(scene, intent.selector) ? { commands: [{ type: 'move_object', selector: intent.selector, direction: intent.direction }] } : noTarget();
     case 'resize_object':
-      return hasEditableTarget(scene) ? { commands: [{ type: 'resize_object', selector: intent.selector, scale: intent.scale }] } : noTarget();
+      return hasEditableTarget(scene, intent.selector) ? { commands: [{ type: 'resize_object', selector: intent.selector, scale: intent.scale }] } : noTarget();
     case 'delete_object':
-      return hasEditableTarget(scene) ? { commands: [{ type: 'delete_object', selector: intent.selector }] } : noTarget();
+      return hasEditableTarget(scene, intent.selector) ? { commands: [{ type: 'delete_object', selector: intent.selector }] } : noTarget();
     case 'undo':
       return { commands: [{ type: 'undo' }] };
     case 'redo':
@@ -115,7 +115,8 @@ const objectCommand = (
   object: createSceneObject(shape, { id: createId(), ...options })
 });
 
-const hasEditableTarget = (scene: SceneState) => Boolean(scene.objects.length);
+const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector']) =>
+  Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId));
 
 const noTarget = () => ({
   commands: [],
