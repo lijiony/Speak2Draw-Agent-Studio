@@ -44,6 +44,8 @@ AI 返回内容必须符合项目内置 JSON 规范：固定格式为 `{ "schema
 
 DeepSeek 也可以在本地规则不确定时返回 `rename_object`、`duplicate_object` 和 `update_text`，分别支持给已有图形改名、复制对象和修改文字内容。
 
+语音绘图引擎还支持把多个对象组织成可编辑素材组，并对多个对象执行对齐和均匀分布。DeepSeek 返回这类意图时也必须使用 `group_objects`、`ungroup_objects`、`align_objects` 或 `distribute_objects` 的白名单结构。
+
 AI 输入输出格式、合法 intent 示例和 DeepSeek 手工联调步骤见 `docs/ai-contract.md`。
 
 如果页面提示麦克风权限被拒绝，请点击浏览器地址栏左侧的权限图标，将麦克风改为允许，然后刷新页面。建议使用 `http://127.0.0.1:5173/` 或 `localhost` 打开应用，不要使用普通局域网地址。
@@ -75,6 +77,10 @@ AI 输入输出格式、合法 intent 示例和 DeepSeek 手工联调步骤见 `
 - 画一个蓝色圆形叫月亮
 - 把月亮改名为星星
 - 复制星星
+- 把月亮和太阳成组叫夜空
+- 取消夜空的分组
+- 把所有图形左对齐
+- 水平分布所有图形
 - 把文字改成世界
 - 把月亮改成红色
 - 画一个蓝色圆形和绿色矩形

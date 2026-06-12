@@ -136,6 +136,35 @@ test('可以直接修改文字内容', async ({ page }) => {
   expect(consoleErrors).toEqual([]);
 });
 
+test('可以通过语音组织多个画布对象', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个蓝色圆形叫月亮');
+  await submitVoiceText(page, '画一个黄色圆形叫太阳');
+  await submitVoiceText(page, '画一个绿色矩形叫云朵');
+  await submitVoiceText(page, '把太阳向右移动一点');
+  await submitVoiceText(page, '把云朵向右移动一点');
+  await submitVoiceText(page, '把云朵向右移动一点');
+
+  await submitVoiceText(page, '把月亮和太阳成组叫夜空');
+  await expect(systemFeedback(page)).toContainText('已将 2 个图形成组为夜空。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.groupName ?? null))).toEqual(['夜空', '夜空', null]);
+
+  await submitVoiceText(page, '取消夜空的分组');
+  await expect(systemFeedback(page)).toContainText('已取消目标素材组。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.groupName ?? null))).toEqual([null, null, null]);
+
+  await submitVoiceText(page, '水平分布所有图形');
+  await expect(systemFeedback(page)).toContainText('已均匀分布目标图形。');
+
+  await submitVoiceText(page, '把所有图形左对齐');
+  await expect(systemFeedback(page)).toContainText('已对齐目标图形。');
+  const xPositions = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.x) ?? []);
+  expect(new Set(xPositions).size).toBe(1);
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test('本地规则不确定时可以通过 AI 兜底解析自然语言', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
   const aiRequests: Array<{ transcript: string }> = [];

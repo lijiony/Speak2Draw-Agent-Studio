@@ -112,6 +112,22 @@ const parseNormalizedIntent = (rawText: string, text: string, allowSequence: boo
   const duplicate = detectDuplicateIntent(text, rawText);
   if (duplicate) return duplicate;
 
+  const ungroup = detectUngroupIntent(text, rawText);
+  if (ungroup) return ungroup;
+
+  const group = detectGroupIntent(text, rawText);
+  if (group) return group;
+
+  const alignment = detectAlignment(text);
+  if (alignment) {
+    return { type: 'align_objects', rawText, selector: detectMultiTargetSelector(text), alignment };
+  }
+
+  const axis = detectDistributionAxis(text);
+  if (axis) {
+    return { type: 'distribute_objects', rawText, selector: detectMultiTargetSelector(text), axis };
+  }
+
   if (/(改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点)/.test(text) && !(detectColor(text) || /(描边|线条加粗|加粗|细一点)/.test(text))) {
     return clarify(rawText, '没有识别出要修改的颜色或样式，请说“把它改成黄色”或“线条加粗”。');
   }
@@ -176,6 +192,15 @@ const detectTargetSelector = (text: string, allowShapeColor: boolean): ObjectSel
   const shape = detectShape(text);
   const color = detectColor(text);
   return shape || color ? { mode: 'by_shape_color', shape, color } : { mode: 'selected' };
+};
+
+const detectMultiTargetSelector = (text: string): ObjectSelector => {
+  if (/(所有|全部|全都|整个画布|所有图形|全部图形|全部对象|所有对象)/.test(text)) return { mode: 'all' };
+
+  const names = extractTargetNames(text);
+  if (names.length > 1) return { mode: 'by_names', names };
+  if (names.length === 1) return { mode: 'by_name', name: names[0] };
+  return detectTargetSelector(text, true);
 };
 
 const detectSequenceIntent = (rawText: string, text: string): DrawingIntent | null => {
@@ -304,6 +329,58 @@ const detectDuplicateIntent = (text: string, rawText: string): DrawingIntent | n
     rawText,
     selector: detectTargetSelector(text, true)
   };
+};
+
+const detectGroupIntent = (text: string, rawText: string): DrawingIntent | null => {
+  if (!/(成组|组合|编组|组成一组|合成一组|合并成组)/.test(text)) return null;
+  if (/(取消|解除|拆开|拆散|解散)/.test(text)) return null;
+  return {
+    type: 'group_objects',
+    rawText,
+    selector: detectMultiTargetSelector(text),
+    name: extractCustomName(text)
+  };
+};
+
+const detectUngroupIntent = (text: string, rawText: string): DrawingIntent | null => {
+  if (!/(取消分组|取消成组|解除分组|解除成组|拆开组合|拆散组合|解散组合|解散组|取消.+分组|解除.+分组|拆开.+组合|拆散.+组合|解散.+组合)/.test(text)) return null;
+  return {
+    type: 'ungroup_objects',
+    rawText,
+    selector: detectMultiTargetSelector(text)
+  };
+};
+
+const detectAlignment = (text: string): DrawingIntent['alignment'] => {
+  if (!/(对齐|居中)/.test(text)) return undefined;
+  if (/(左对齐|左边对齐|靠左对齐)/.test(text)) return 'left';
+  if (/(右对齐|右边对齐|靠右对齐)/.test(text)) return 'right';
+  if (/(顶端对齐|顶部对齐|上对齐|靠上对齐)/.test(text)) return 'top';
+  if (/(底端对齐|底部对齐|下对齐|靠下对齐)/.test(text)) return 'bottom';
+  if (/(垂直居中|纵向居中)/.test(text)) return 'center-y';
+  if (/(水平居中|横向居中|居中对齐|中心对齐)/.test(text)) return 'center-x';
+  return undefined;
+};
+
+const detectDistributionAxis = (text: string): DrawingIntent['axis'] => {
+  if (!/(分布|均匀|等距)/.test(text)) return undefined;
+  if (/(垂直分布|纵向分布|上下均匀|垂直等距|纵向等距)/.test(text)) return 'vertical';
+  if (/(水平分布|横向分布|左右均匀|水平等距|横向等距|均匀分布|等距排列)/.test(text)) return 'horizontal';
+  return undefined;
+};
+
+const extractTargetNames = (text: string) => {
+  const ungroupPhrase = text.match(/(?:取消|解除|拆开|拆散|解散)(.+?)(?:的)?(?:分组|成组|组合)/)?.[1];
+  const targetPhrase = ungroupPhrase ?? text.match(
+    /(?:把|将)?(.+?)(?:成组|组合|编组|组成一组|合成一组|合并成组|取消分组|取消成组|解除分组|解除成组|拆开组合|拆散组合|解散组合|解散组|左对齐|右对齐|左边对齐|右边对齐|顶端对齐|顶部对齐|底端对齐|底部对齐|上对齐|下对齐|水平居中|垂直居中|居中对齐|中心对齐|水平分布|垂直分布|均匀分布|等距排列)/
+  )?.[1];
+  if (!targetPhrase) return [];
+
+  const names = targetPhrase
+    .split(/和|还有|与|跟|及|、/)
+    .map((item) => sanitizeName(item))
+    .filter((item): item is string => Boolean(item));
+  return Array.from(new Set(names));
 };
 
 const extractRenamedName = (text: string) => {

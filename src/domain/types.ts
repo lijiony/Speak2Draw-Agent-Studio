@@ -1,5 +1,7 @@
 export type ShapeKind = 'circle' | 'rectangle' | 'ellipse' | 'line' | 'triangle' | 'text';
 export type LayerDirection = 'front' | 'back' | 'forward' | 'backward';
+export type AlignmentMode = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom';
+export type DistributionAxis = 'horizontal' | 'vertical';
 
 export type DrawingIntentType =
   | 'sequence'
@@ -13,6 +15,10 @@ export type DrawingIntentType =
   | 'rename_object'
   | 'duplicate_object'
   | 'update_text'
+  | 'group_objects'
+  | 'ungroup_objects'
+  | 'align_objects'
+  | 'distribute_objects'
   | 'update_style'
   | 'move_object'
   | 'resize_object'
@@ -32,6 +38,10 @@ export type DrawingCommandType =
   | 'move_object'
   | 'resize_object'
   | 'reorder_object'
+  | 'group_objects'
+  | 'ungroup_objects'
+  | 'align_objects'
+  | 'distribute_objects'
   | 'delete_object'
   | 'undo'
   | 'redo'
@@ -109,16 +119,19 @@ export interface DrawingIntent {
   selector?: ObjectSelector;
   direction?: 'left' | 'right' | 'up' | 'down' | 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   layer?: LayerDirection;
+  alignment?: AlignmentMode;
+  axis?: DistributionAxis;
   scale?: number;
   recipe?: DrawingRecipeItem[];
   reason?: string;
 }
 
 export interface ObjectSelector {
-  mode: 'last' | 'selected' | 'by_shape_color' | 'by_name';
+  mode: 'last' | 'selected' | 'all' | 'by_shape_color' | 'by_name' | 'by_names';
   shape?: ShapeKind;
   color?: string;
   name?: string;
+  names?: string[];
 }
 
 export interface DrawingCommand {
@@ -130,7 +143,11 @@ export interface DrawingCommand {
   };
   direction?: DrawingIntent['direction'];
   layer?: LayerDirection;
+  alignment?: AlignmentMode;
+  axis?: DistributionAxis;
   scale?: number;
+  groupId?: string;
+  groupName?: string;
 }
 
 export interface ExecutionResult {

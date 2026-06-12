@@ -1,4 +1,14 @@
-import type { DrawingIntent, DrawingIntentType, DrawingRecipeItem, LayerDirection, ObjectSelector, SceneState, ShapeKind } from '../domain/types';
+import type {
+  AlignmentMode,
+  DistributionAxis,
+  DrawingIntent,
+  DrawingIntentType,
+  DrawingRecipeItem,
+  LayerDirection,
+  ObjectSelector,
+  SceneState,
+  ShapeKind
+} from '../domain/types';
 
 export interface AiIntentRequestPayload {
   transcript: string;
@@ -52,6 +62,10 @@ const INTENT_TYPES: DrawingIntentType[] = [
   'rename_object',
   'duplicate_object',
   'update_text',
+  'group_objects',
+  'ungroup_objects',
+  'align_objects',
+  'distribute_objects',
   'update_style',
   'move_object',
   'resize_object',
@@ -71,6 +85,8 @@ const INTENT_TYPES: DrawingIntentType[] = [
 const SHAPES: ShapeKind[] = ['circle', 'rectangle', 'ellipse', 'line', 'triangle', 'text'];
 const DIRECTIONS: Array<NonNullable<DrawingIntent['direction']>> = ['left', 'right', 'up', 'down', 'center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const LAYERS: LayerDirection[] = ['front', 'back', 'forward', 'backward'];
+const ALIGNMENTS: AlignmentMode[] = ['left', 'center-x', 'right', 'top', 'center-y', 'bottom'];
+const AXES: DistributionAxis[] = ['horizontal', 'vertical'];
 
 export const AI_INTENT_JSON_SCHEMA = {
   schemaVersion: AI_INTENT_SCHEMA_VERSION,
@@ -81,11 +97,14 @@ export const AI_INTENT_JSON_SCHEMA = {
       shape: SHAPES,
       direction: DIRECTIONS,
       layer: LAYERS,
+      alignment: ALIGNMENTS,
+      axis: AXES,
       name: 'string for object or asset group name',
       color: '#RRGGBB',
       selector: {
-        mode: ['selected', 'last', 'by_name', 'by_shape_color'],
+        mode: ['selected', 'last', 'all', 'by_name', 'by_names', 'by_shape_color'],
         name: 'string',
+        names: ['string'],
         shape: SHAPES,
         color: '#RRGGBB'
       },
@@ -112,6 +131,10 @@ export const AI_INTENT_JSON_SCHEMA = {
     rename_object: ['name'],
     duplicate_object: ['selector recommended'],
     update_text: ['text'],
+    group_objects: ['selector recommended, use all or by_names for multiple targets'],
+    ungroup_objects: ['selector recommended'],
+    align_objects: ['alignment'],
+    distribute_objects: ['axis'],
     update_style: ['color or strokeColor or strokeWidth'],
     move_object: ['direction'],
     resize_object: ['scale'],
@@ -151,6 +174,7 @@ export const buildDeepSeekMessages = (payload: AiIntentRequestPayload) => [
       '如果请求包含 clarificationContext，说明上一轮语音没有执行成功；请把 originalTranscript、question 和本轮 transcript 合并理解，优先输出可执行意图。' +
       'shape 只能是 circle, rectangle, ellipse, line, triangle, text。direction 只能是 left, right, up, down, center, top-left, top-right, bottom-left, bottom-right。' +
       '如果用户要给已有图形改名、复制它、或者修改文字内容，请分别返回 rename_object、duplicate_object、update_text。' +
+      '如果用户要成组、取消分组、对齐或均匀分布图形，请分别返回 group_objects、ungroup_objects、align_objects、distribute_objects。alignment 只能是 left, center-x, right, top, center-y, bottom；axis 只能是 horizontal 或 vertical。' +
       '当用户要画猫、船、云、人物等内置图形没有的元素时，优先返回 create_asset_recipe，并在 intent.name 写入整个素材名称，例如“猫”或“戴帽子的猫”，再用 recipe 数组拆成多个安全矢量对象。recipe 每项只允许 shape, name, color, strokeColor, strokeWidth, position, width, height, text。系统会把这些部件按 intent.name 成组，后续用户可以按名称选择、移动、改色或删除整组素材。' +
       '颜色使用十六进制，例如红色 #ef4444、蓝色 #2563eb、绿色 #16a34a、黄色 #facc15、黑色 #111827、紫色 #7c3aed、粉色 #ec4899。' +
       '如果用户提到已有对象名称，使用 selector: { "mode": "by_name", "name": "对象名" }。如果包含多个动作，可以返回 {"type":"sequence","intents":[...]}。如果无法安全执行，返回 {"type":"unknown","reason":"..."}。'
@@ -198,6 +222,8 @@ const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number):
     intent.direction = value.direction as DrawingIntent['direction'];
   }
   if (typeof value.layer === 'string' && LAYERS.includes(value.layer as LayerDirection)) intent.layer = value.layer as LayerDirection;
+  if (typeof value.alignment === 'string' && ALIGNMENTS.includes(value.alignment as AlignmentMode)) intent.alignment = value.alignment as AlignmentMode;
+  if (typeof value.axis === 'string' && AXES.includes(value.axis as DistributionAxis)) intent.axis = value.axis as DistributionAxis;
 
   const selector = normalizeSelector(value.selector);
   if (selector) intent.selector = selector;
@@ -239,6 +265,10 @@ const isIntentStructurallyExecutable = (intent: DrawingIntent) => {
       return typeof intent.scale === 'number';
     case 'reorder_object':
       return Boolean(intent.layer);
+    case 'align_objects':
+      return Boolean(intent.alignment);
+    case 'distribute_objects':
+      return Boolean(intent.axis);
     case 'clarify':
     case 'unknown':
       return Boolean(intent.reason);
@@ -278,9 +308,18 @@ const normalizeRecipe = (recipe: unknown): DrawingRecipeItem[] => {
 const normalizeSelector = (selector: unknown): ObjectSelector | undefined => {
   if (!isRecord(selector) || typeof selector.mode !== 'string') return undefined;
   if (selector.mode === 'last' || selector.mode === 'selected') return { mode: selector.mode };
+  if (selector.mode === 'all') return { mode: 'all' };
   if (selector.mode === 'by_name' && typeof selector.name === 'string') {
     const name = selector.name.trim().slice(0, 24);
     return name ? { mode: 'by_name', name } : undefined;
+  }
+  if (selector.mode === 'by_names' && Array.isArray(selector.names)) {
+    const names = selector.names
+      .filter((name): name is string => typeof name === 'string')
+      .map((name) => name.trim().slice(0, 24))
+      .filter(Boolean)
+      .slice(0, 8);
+    return names.length > 0 ? { mode: 'by_names', names } : undefined;
   }
   if (selector.mode === 'by_shape_color') {
     const next: ObjectSelector = { mode: 'by_shape_color' };

@@ -1,4 +1,4 @@
-import type { DrawingCommand, ObjectSelector, SceneObject, SceneSnapshot, SceneState, ShapeKind } from './types';
+import type { AlignmentMode, DistributionAxis, DrawingCommand, ObjectSelector, SceneObject, SceneSnapshot, SceneState, ShapeKind } from './types';
 
 export const CANVAS_WIDTH = 960;
 export const CANVAS_HEIGHT = 600;
@@ -116,6 +116,40 @@ const applyCommandInternal = (scene: SceneState, command: DrawingCommand, record
       const objects = reorderObjects(scene.objects, findRelatedObjects(scene.objects, target), command.layer ?? 'front');
       return objects === scene.objects ? scene : applySnapshot(scene, { objects, selectedId: target.id }, recordHistory);
     }
+    case 'group_objects': {
+      const targets = findObjects(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
+      if (targets.length < 2 || !command.groupId) return scene;
+      const targetIds = new Set(targets.map((object) => object.id));
+      const objects = scene.objects.map((object) =>
+        targetIds.has(object.id) ? { ...object, groupId: command.groupId, groupName: command.groupName ?? '素材组' } : object
+      );
+      return applySnapshot(scene, { objects, selectedId: targets[targets.length - 1]?.id ?? scene.selectedId }, recordHistory);
+    }
+    case 'ungroup_objects': {
+      const targets = findObjects(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
+      if (targets.length === 0) return scene;
+      const targetIds = new Set(targets.map((object) => object.id));
+      const objects = scene.objects.map((object) =>
+        targetIds.has(object.id) ? { ...object, groupId: undefined, groupName: undefined } : object
+      );
+      return applySnapshot(scene, { objects, selectedId: targets[targets.length - 1]?.id ?? scene.selectedId }, recordHistory);
+    }
+    case 'align_objects': {
+      const targets = findObjects(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
+      if (targets.length < 2) return scene;
+      const alignedObjects = alignObjects(targets, command.alignment ?? 'center-x');
+      const alignedById = new Map(alignedObjects.map((object) => [object.id, object]));
+      const objects = scene.objects.map((object) => alignedById.get(object.id) ?? object);
+      return applySnapshot(scene, { objects, selectedId: targets[targets.length - 1]?.id ?? scene.selectedId }, recordHistory);
+    }
+    case 'distribute_objects': {
+      const targets = findObjects(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
+      if (targets.length < 3) return scene;
+      const distributedObjects = distributeObjects(targets, command.axis ?? 'horizontal');
+      const distributedById = new Map(distributedObjects.map((object) => [object.id, object]));
+      const objects = scene.objects.map((object) => distributedById.get(object.id) ?? object);
+      return applySnapshot(scene, { objects, selectedId: targets[targets.length - 1]?.id ?? scene.selectedId }, recordHistory);
+    }
     case 'delete_object': {
       const target = findObject(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
       if (!target) return scene;
@@ -160,13 +194,50 @@ export const findObject = (
   if (!selector) return selectedId ? objects.find((object) => object.id === selectedId) : lastItem(objects);
   if (selector.mode === 'selected') return selectedId ? objects.find((object) => object.id === selectedId) : lastItem(objects);
   if (selector.mode === 'last') return lastItem(objects);
+  if (selector.mode === 'all' || selector.mode === 'by_names') return lastItem(findObjects(objects, selector, selectedId));
   if (selector.mode === 'by_name') {
-    const name = selector.name ?? '';
-    return [...objects]
-      .reverse()
-      .find((object) => nameMatches(object.name, name) || nameMatches(object.groupName, name) || nameMatches(object.text, name));
+    return findByName(objects, selector.name ?? '');
   }
   return [...objects].reverse().find((object) => {
+    const shapeMatches = !selector.shape || object.kind === selector.shape;
+    const colorMatches = !selector.color || object.style.fill === selector.color || object.style.stroke === selector.color;
+    return shapeMatches && colorMatches;
+  });
+};
+
+export const findObjects = (
+  objects: SceneObject[],
+  selector?: ObjectSelector,
+  selectedId?: string | null
+): SceneObject[] => {
+  if (!selector) {
+    const target = selectedId ? objects.find((object) => object.id === selectedId) : lastItem(objects);
+    return target ? findRelatedObjects(objects, target) : [];
+  }
+  if (selector.mode === 'all') return objects;
+  if (selector.mode === 'selected') {
+    const target = selectedId ? objects.find((object) => object.id === selectedId) : lastItem(objects);
+    return target ? findRelatedObjects(objects, target) : [];
+  }
+  if (selector.mode === 'last') {
+    const target = lastItem(objects);
+    return target ? findRelatedObjects(objects, target) : [];
+  }
+  if (selector.mode === 'by_name') {
+    const target = findByName(objects, selector.name ?? '');
+    return target ? findRelatedObjects(objects, target) : [];
+  }
+  if (selector.mode === 'by_names') {
+    const targetIds = new Set<string>();
+    for (const name of selector.names ?? []) {
+      const target = findByName(objects, name);
+      if (!target) continue;
+      for (const related of findRelatedObjects(objects, target)) targetIds.add(related.id);
+    }
+    return objects.filter((object) => targetIds.has(object.id));
+  }
+
+  return objects.filter((object) => {
     const shapeMatches = !selector.shape || object.kind === selector.shape;
     const colorMatches = !selector.color || object.style.fill === selector.color || object.style.stroke === selector.color;
     return shapeMatches && colorMatches;
@@ -316,6 +387,40 @@ const reorderObject = (objects: SceneObject[], targetId: string | undefined, lay
   return nextObjects;
 };
 
+const alignObjects = (objects: SceneObject[], alignment: AlignmentMode): SceneObject[] => {
+  const bounds = getBounds(objects);
+  return objects.map((object) => {
+    const next = { x: object.x, y: object.y };
+    if (alignment === 'left') next.x = bounds.x;
+    if (alignment === 'right') next.x = bounds.x + bounds.width - object.width;
+    if (alignment === 'center-x') next.x = bounds.x + bounds.width / 2 - object.width / 2;
+    if (alignment === 'top') next.y = bounds.y;
+    if (alignment === 'bottom') next.y = bounds.y + bounds.height - object.height;
+    if (alignment === 'center-y') next.y = bounds.y + bounds.height / 2 - object.height / 2;
+    return {
+      ...object,
+      x: clamp(next.x, 0, CANVAS_WIDTH - object.width),
+      y: clamp(next.y, 0, CANVAS_HEIGHT - object.height)
+    };
+  });
+};
+
+const distributeObjects = (objects: SceneObject[], axis: DistributionAxis): SceneObject[] => {
+  const center = (object: SceneObject) => axis === 'horizontal' ? object.x + object.width / 2 : object.y + object.height / 2;
+  const sorted = [...objects].sort((a, b) => center(a) - center(b));
+  const first = center(sorted[0]);
+  const last = center(sorted[sorted.length - 1]);
+  const gap = (last - first) / (sorted.length - 1);
+
+  return sorted.map((object, index) => {
+    const nextCenter = first + gap * index;
+    if (axis === 'horizontal') {
+      return { ...object, x: clamp(nextCenter - object.width / 2, 0, CANVAS_WIDTH - object.width) };
+    }
+    return { ...object, y: clamp(nextCenter - object.height / 2, 0, CANVAS_HEIGHT - object.height) };
+  });
+};
+
 const defaultSize = (kind: ShapeKind) => {
   if (kind === 'line') return { width: 180, height: 8 };
   if (kind === 'text') return { width: 220, height: 64 };
@@ -325,6 +430,11 @@ const defaultSize = (kind: ShapeKind) => {
 
 const findRelatedObjects = (objects: SceneObject[], target: SceneObject) =>
   target.groupId ? objects.filter((object) => object.groupId === target.groupId) : [target];
+
+const findByName = (objects: SceneObject[], name: string) =>
+  [...objects]
+    .reverse()
+    .find((object) => nameMatches(object.name, name) || nameMatches(object.groupName, name) || nameMatches(object.text, name));
 
 const getBounds = (objects: SceneObject[]) => {
   const minX = Math.min(...objects.map((object) => object.x));
