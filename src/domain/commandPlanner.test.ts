@@ -53,6 +53,23 @@ describe('planCommands', () => {
     expect(plan.commands).toHaveLength(0);
   });
 
+  it('样式指令没有有效修改内容时要求澄清', () => {
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('circle', { id: 'shape-1', name: '圆形' })
+    });
+    const intent: DrawingIntent = {
+      type: 'update_style',
+      rawText: '把它改成漂亮一点',
+      selector: { mode: 'selected' }
+    };
+
+    const plan = planCommands(intent, scene);
+    expect(plan.needsClarification).toBe(true);
+    expect(plan.commands).toHaveLength(0);
+    expect(plan.message).toContain('没有识别出要修改的颜色或样式');
+  });
+
   it('目标对象不存在时，图层调整会要求澄清', () => {
     const intent: DrawingIntent = {
       type: 'reorder_object',

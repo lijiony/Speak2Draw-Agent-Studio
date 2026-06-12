@@ -89,4 +89,21 @@ describe('voice drawing flow', () => {
     expect(result.scene).toBe(scene);
     expect(result.message).toContain('可以说');
   });
+
+  it('无有效样式内容时不会误报执行成功', () => {
+    resetCommandIdsForTest();
+    const createInput = transcript('画一个蓝色圆形');
+    const createPlan = planCommands(parseIntent(createInput), createEmptyScene());
+    const created = executeDrawingCommands(createEmptyScene(), createPlan.commands, createInput, createPlan);
+
+    const unclearInput = transcript('把它改成漂亮一点');
+    const unclearPlan = planCommands(parseIntent(unclearInput), created.scene);
+    const result = executeDrawingCommands(created.scene, unclearPlan.commands, unclearInput, unclearPlan);
+
+    expect(result.ok).toBe(false);
+    expect(result.needsClarification).toBe(true);
+    expect(result.commandsExecuted).toBe(0);
+    expect(result.scene).toBe(created.scene);
+    expect(result.message).toContain('没有识别出要修改的颜色或样式');
+  });
 });

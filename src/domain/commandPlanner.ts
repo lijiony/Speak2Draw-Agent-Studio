@@ -42,7 +42,15 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
           strokeWidth: intent.strokeWidth
         }
       };
-      return { commands: [{ type: 'update_object', selector: intent.selector, updates: compactStyleUpdate(updates) }] };
+      const styleUpdate = compactStyleUpdate(updates);
+      if (!hasStyleUpdate(styleUpdate)) {
+        return {
+          commands: [],
+          message: '没有识别出要修改的颜色或样式，请说“把它改成黄色”或“线条加粗”。',
+          needsClarification: true
+        };
+      }
+      return { commands: [{ type: 'update_object', selector: intent.selector, updates: styleUpdate }] };
     }
     case 'move_object':
       return hasEditableTarget(scene, intent.selector) ? { commands: [{ type: 'move_object', selector: intent.selector, direction: intent.direction }] } : noTarget();
@@ -215,5 +223,7 @@ const compactStyleUpdate = (updates: { style: { fill?: string; stroke?: string; 
     strokeWidth?: number;
   }
 });
+
+const hasStyleUpdate = (updates: ReturnType<typeof compactStyleUpdate>) => Object.keys(updates.style).length > 0;
 
 const createId = () => `shape-${nextId++}`;

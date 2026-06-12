@@ -72,6 +72,20 @@ test('纯语音查询可以返回帮助和画布状态', async ({ page }) => {
   expect(consoleErrors).toEqual([]);
 });
 
+test('模糊样式指令不会误报成功', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个蓝色圆形');
+  await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
+
+  await submitVoiceText(page, '把它改成漂亮一点');
+  await expect(systemFeedback(page)).toContainText('没有识别出要修改的颜色或样式');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(1);
+  await expect(page.locator('svg circle[fill="#2563eb"]')).toHaveCount(1);
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test('语音文本归一化不会破坏文字输入', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 
