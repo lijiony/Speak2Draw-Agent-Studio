@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Mic, MicOff, RotateCcw, Sparkles, Volume2 } from 'lucide-react';
+import { resolveAiIntent, shouldUseAiIntentFallback } from './ai/aiIntentClient';
 import { planCommands } from './domain/commandPlanner';
 import { executeDrawingCommands } from './domain/drawingExecutor';
 import { parseIntent } from './domain/intentParser';
@@ -12,7 +13,7 @@ import { speak } from './voice/voiceFeedback';
 declare global {
   interface Window {
     __speak2drawTest?: {
-      submitTranscript: (text: string, confidence?: number) => void;
+      submitTranscript: (text: string, confidence?: number) => Promise<void>;
       getScene: () => SceneState;
     };
   }
@@ -32,10 +33,18 @@ export const App = () => {
   }, [scene]);
 
   const handleTranscript = useCallback(
-    (transcript: VoiceTranscript) => {
+    async (transcript: VoiceTranscript) => {
       const currentScene = sceneRef.current;
-      const intent = parseIntent(transcript);
-      const plan = planCommands(intent, currentScene);
+      const localIntent = parseIntent(transcript);
+      let plan = planCommands(localIntent, currentScene);
+
+      if (shouldUseAiIntentFallback(localIntent, plan, transcript)) {
+        const aiResult = await resolveAiIntent(transcript, currentScene, plan.message ?? localIntent.reason);
+        if (aiResult.ok) {
+          plan = planCommands(aiResult.intent, currentScene);
+        }
+      }
+
       const result = executeDrawingCommands(currentScene, plan.commands, transcript, plan);
       setLastTranscript(transcript.text);
       setScene(result.scene);

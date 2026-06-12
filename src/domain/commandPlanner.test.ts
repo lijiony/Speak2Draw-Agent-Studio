@@ -46,6 +46,30 @@ describe('planCommands', () => {
     expect(plan.commands.map((command) => command.object?.style.fill)).toEqual(['#2563eb', '#16a34a']);
   });
 
+  it('AI 素材配方会转换为安全绘图命令', () => {
+    const plan = planCommands(
+      {
+        type: 'create_asset_recipe',
+        rawText: '画一只猫',
+        recipe: [
+          { shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 360, y: 220 }, width: 160, height: 140 },
+          { shape: 'triangle', name: '猫左耳', color: '#f9fafb', position: { x: 360, y: 190 }, width: 60, height: 70 },
+          { shape: 'triangle', name: '猫右耳', color: '#f9fafb', position: { x: 460, y: 190 }, width: 60, height: 70 }
+        ]
+      },
+      createEmptyScene()
+    );
+
+    expect(plan.commands).toHaveLength(3);
+    expect(plan.commands.map((command) => command.object?.name)).toEqual(['猫脸', '猫左耳', '猫右耳']);
+    expect(plan.commands[0].object).toMatchObject({
+      kind: 'circle',
+      width: 160,
+      height: 140,
+      style: { fill: '#f9fafb' }
+    });
+  });
+
   it('创建图形时会保留自定义对象名称', () => {
     const single = planCommands(parseIntent(transcript('画一个蓝色圆形叫月亮')), createEmptyScene());
     expect(single.commands[0].object?.name).toBe('月亮');

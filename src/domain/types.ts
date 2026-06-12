@@ -8,6 +8,7 @@ export type DrawingIntentType =
   | 'describe_selection'
   | 'create_shape'
   | 'create_complex_scene'
+  | 'create_asset_recipe'
   | 'select_object'
   | 'update_style'
   | 'move_object'
@@ -65,6 +66,18 @@ export interface SceneObject {
   createdAt: number;
 }
 
+export interface DrawingRecipeItem {
+  shape: ShapeKind;
+  name?: string;
+  color?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  position?: PositionHint;
+  width?: number;
+  height?: number;
+  text?: string;
+}
+
 export interface SceneSnapshot {
   objects: SceneObject[];
   selectedId: string | null;
@@ -85,11 +98,14 @@ export interface DrawingIntent {
   strokeColor?: string;
   strokeWidth?: number;
   position?: PositionHint;
+  width?: number;
+  height?: number;
   text?: string;
   selector?: ObjectSelector;
   direction?: 'left' | 'right' | 'up' | 'down' | 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   layer?: LayerDirection;
   scale?: number;
+  recipe?: DrawingRecipeItem[];
   reason?: string;
 }
 

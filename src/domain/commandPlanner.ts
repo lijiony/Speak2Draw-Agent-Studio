@@ -27,6 +27,12 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       return { commands: [createCommand(intent.shape ?? 'rectangle', intent)] };
     case 'create_complex_scene':
       return { commands: createComplexCommands(intent.rawText) };
+    case 'create_asset_recipe': {
+      const commands = createAssetRecipeCommands(intent);
+      return commands.length
+        ? { commands }
+        : { commands: [], message: 'AI 没有生成可安全执行的绘图配方，请换一种说法。', needsClarification: true };
+    }
     case 'select_object': {
       const target = findObject(scene.objects, intent.selector, scene.selectedId);
       return target
@@ -80,11 +86,28 @@ const createCommand = (shape: ShapeKind, intent: DrawingIntent): DrawingCommand 
     name: intent.name,
     x: intent.position?.x,
     y: intent.position?.y,
+    width: intent.width,
+    height: intent.height,
     fill: intent.color,
     stroke: shape === 'line' ? intent.color ?? '#111827' : '#111827',
     text: intent.text
   })
 });
+
+const createAssetRecipeCommands = (intent: DrawingIntent): DrawingCommand[] =>
+  (intent.recipe ?? []).slice(0, 16).map((item) =>
+    objectCommand(item.shape, {
+      name: item.name,
+      x: item.position?.x,
+      y: item.position?.y,
+      width: item.width,
+      height: item.height,
+      fill: item.shape === 'line' ? 'none' : item.color,
+      stroke: item.strokeColor ?? (item.shape === 'line' ? item.color ?? '#111827' : '#111827'),
+      strokeWidth: item.strokeWidth,
+      text: item.text
+    })
+  );
 
 const createComplexCommands = (rawText: string): DrawingCommand[] => {
   const text = normalizeVoiceText(rawText);

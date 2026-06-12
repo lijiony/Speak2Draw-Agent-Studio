@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 declare global {
   interface Window {
     __speak2drawTest?: {
-      submitTranscript: (text: string, confidence?: number) => void;
+      submitTranscript: (text: string, confidence?: number) => Promise<void>;
       getScene: () => { objects: Array<{ name: string; kind: string; x: number; style: { fill: string } }> };
     };
   }
@@ -92,6 +92,74 @@ test('可以通过语音给图形命名并按名称编辑', async ({ page }) => 
   expect(consoleErrors).toEqual([]);
 });
 
+test('本地规则不确定时可以通过 AI 兜底解析自然语言', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+  const aiRequests: Array<{ transcript: string }> = [];
+
+  await page.route('**/api/ai/intent', async (route) => {
+    const requestBody = route.request().postDataJSON() as { transcript: string };
+    aiRequests.push(requestBody);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        intent: {
+          type: 'update_style',
+          selector: { mode: 'by_name', name: '月亮' },
+          color: '#ec4899'
+        }
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一个蓝色圆形叫月亮');
+  await expect(page.locator('svg circle[fill="#2563eb"]')).toHaveCount(1);
+
+  await submitVoiceText(page, '月亮换个梦幻感');
+  await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
+  await expect(page.locator('svg circle[fill="#ec4899"]')).toHaveCount(1);
+
+  expect(aiRequests.map((request) => request.transcript)).toEqual(['月亮换个梦幻感']);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('AI 可以把缺失元素生成安全矢量配方', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        intent: {
+          type: 'create_asset_recipe',
+          recipe: [
+            { shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 370, y: 230 }, width: 160, height: 140 },
+            { shape: 'triangle', name: '猫左耳', color: '#f9fafb', position: { x: 375, y: 190 }, width: 60, height: 70 },
+            { shape: 'triangle', name: '猫右耳', color: '#f9fafb', position: { x: 470, y: 190 }, width: 60, height: 70 },
+            { shape: 'rectangle', name: '红色帽子', color: '#ef4444', position: { x: 405, y: 185 }, width: 100, height: 36 }
+          ]
+        }
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一只戴帽子的猫');
+  await expect(systemFeedback(page)).toContainText('已拆解并执行 4 个绘图步骤。');
+
+  const objectNames = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? []);
+  expect(objectNames).toEqual(['猫脸', '猫左耳', '猫右耳', '红色帽子']);
+  await expect(page.locator('svg circle[fill="#f9fafb"]')).toHaveCount(1);
+  await expect(page.locator('svg rect[fill="#ef4444"]')).toHaveCount(1);
+  expect(consoleErrors).toEqual([]);
+});
+
 test('撤销会回退整条复杂语音命令', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 
@@ -165,8 +233,8 @@ test('移动端视口下核心面板仍然可见', async ({ page }) => {
 });
 
 const submitVoiceText = async (page: Page, text: string) => {
-  await page.evaluate((value) => {
-    window.__speak2drawTest?.submitTranscript(value);
+  await page.evaluate(async (value) => {
+    await window.__speak2drawTest?.submitTranscript(value);
   }, text);
 };
 
