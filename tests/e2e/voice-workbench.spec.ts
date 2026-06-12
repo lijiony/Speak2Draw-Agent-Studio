@@ -193,7 +193,7 @@ test('本地规则不确定时可以通过 AI 兜底解析自然语言', async (
 
   await submitVoiceText(page, '月亮换个梦幻感');
   await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
-  await expect(aiStatus(page)).toContainText('DeepSeek 已解析为 update_style。');
+  await expect(aiStatus(page)).toContainText('AI 理解为 update_style。');
   await expect(page.locator('svg circle[fill="#ec4899"]')).toHaveCount(1);
 
   expect(await page.evaluate(() => window.__speak2drawTest?.getAiStatus())).toMatchObject({
