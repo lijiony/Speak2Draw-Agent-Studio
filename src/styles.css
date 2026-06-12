@@ -145,6 +145,7 @@ h2 {
 .status-block,
 .info-block,
 .mic-test-block,
+.ai-status-block,
 .command-list {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -174,6 +175,21 @@ h2 {
   background: #fef2f2;
 }
 
+.ai-status-block.checking {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.ai-status-block.used {
+  border-color: #c4b5fd;
+  background: #f5f3ff;
+}
+
+.ai-status-block.fallback {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
 .status-block.error,
 .status-block.unsupported {
   border-color: #fecaca;
@@ -194,6 +210,12 @@ h2 {
 .status-block p,
 .info-block p,
 .mic-test-block p {
+  margin-top: 6px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.ai-status-block p {
   margin-top: 6px;
   color: #4b5563;
   line-height: 1.5;

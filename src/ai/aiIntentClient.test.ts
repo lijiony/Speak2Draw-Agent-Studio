@@ -21,8 +21,7 @@ describe('aiIntentClient', () => {
     let submittedBody = '';
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       submittedBody = init?.body as string;
-      return (
-      new Response(
+      return new Response(
         JSON.stringify({
           ok: true,
           provider: 'deepseek',
@@ -34,7 +33,6 @@ describe('aiIntentClient', () => {
           } satisfies Partial<DrawingIntent>
         }),
         { status: 200 }
-      )
       );
     });
 
@@ -62,6 +60,27 @@ describe('aiIntentClient', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toContain('回退到本地规则');
+    }
+  });
+
+  it('代理返回未配置原因时传递给前端', async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          provider: 'local',
+          reason: '未配置 DEEPSEEK_API_KEY。'
+        }),
+        { status: 200 }
+      )
+    );
+
+    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), undefined, fetcher as unknown as typeof fetch);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.provider).toBe('local');
+      expect(result.reason).toBe('未配置 DEEPSEEK_API_KEY。');
     }
   });
 });

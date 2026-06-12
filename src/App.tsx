@@ -10,11 +10,17 @@ import { runMicrophoneInputTest, type MicrophoneTestResult } from './voice/micro
 import { useSpeechInput } from './voice/useSpeechInput';
 import { speak } from './voice/voiceFeedback';
 
+type AiResolutionStatus = {
+  state: 'idle' | 'local' | 'checking' | 'used' | 'fallback';
+  message: string;
+};
+
 declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => Promise<void>;
       getScene: () => SceneState;
+      getAiStatus: () => AiResolutionStatus;
     };
   }
 }
@@ -26,23 +32,53 @@ export const App = () => {
   const [lastResult, setLastResult] = useState<ExecutionResult | null>(null);
   const [micTestStatus, setMicTestStatus] = useState<'idle' | 'testing'>('idle');
   const [micTestResult, setMicTestResult] = useState<MicrophoneTestResult | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiResolutionStatus>(() => ({
+    state: 'idle',
+    message: '等待需要 AI 协助的语音指令。'
+  }));
+  const aiStatusRef = useRef(aiStatus);
   const [history, setHistory] = useState<string[]>([]);
 
   useEffect(() => {
     sceneRef.current = scene;
   }, [scene]);
 
+  useEffect(() => {
+    aiStatusRef.current = aiStatus;
+  }, [aiStatus]);
+
   const handleTranscript = useCallback(
     async (transcript: VoiceTranscript) => {
       const currentScene = sceneRef.current;
       const localIntent = parseIntent(transcript);
       let plan = planCommands(localIntent, currentScene);
+      let aiHistoryLabel = '本地规则';
 
       if (shouldUseAiIntentFallback(localIntent, plan, transcript)) {
+        setAiStatus({
+          state: 'checking',
+          message: '正在请求 DeepSeek 解析这条语音。'
+        });
         const aiResult = await resolveAiIntent(transcript, currentScene, plan.message ?? localIntent.reason);
         if (aiResult.ok) {
           plan = planCommands(aiResult.intent, currentScene);
+          aiHistoryLabel = 'DeepSeek';
+          setAiStatus({
+            state: 'used',
+            message: `DeepSeek 已解析为 ${aiResult.intent.type}。`
+          });
+        } else {
+          aiHistoryLabel = '本地回退';
+          setAiStatus({
+            state: 'fallback',
+            message: aiResult.reason
+          });
         }
+      } else {
+        setAiStatus({
+          state: 'local',
+          message: '本地规则已直接处理。'
+        });
       }
 
       const result = executeDrawingCommands(currentScene, plan.commands, transcript, plan);
@@ -50,7 +86,7 @@ export const App = () => {
       setScene(result.scene);
       sceneRef.current = result.scene;
       setLastResult(result);
-      setHistory((items) => [`${transcript.text} → ${result.message}`, ...items].slice(0, 8));
+      setHistory((items) => [`${transcript.text} → ${result.message}（${aiHistoryLabel}）`, ...items].slice(0, 8));
       speak(result.message);
       if (result.exportSvg) downloadSvg(result.exportSvg);
     },
@@ -67,7 +103,8 @@ export const App = () => {
           receivedAt: performance.now(),
           isFinal: true
         }),
-      getScene: () => sceneRef.current
+      getScene: () => sceneRef.current,
+      getAiStatus: () => aiStatusRef.current
     };
 
     return () => {
@@ -116,6 +153,7 @@ export const App = () => {
           <aside className="side-panel" aria-label="语音状态">
             <StatusBlock status={status} error={error} activity={activity} />
             <MicrophoneTestBlock status={micTestStatus} result={micTestResult} onTest={handleMicrophoneTest} />
+            <AiStatusBlock status={aiStatus} />
             <InfoBlock title="最近听到" value={lastTranscript} />
             <InfoBlock title="系统反馈" value={lastResult?.message ?? '启动监听后，说出绘图指令。'} />
             <dl className="metrics">
@@ -290,6 +328,13 @@ const MicrophoneTestBlock = ({
         <p className="status-action">{result.action}</p>
       </div>
     ) : null}
+  </section>
+);
+
+const AiStatusBlock = ({ status }: { status: AiResolutionStatus }) => (
+  <section className={`ai-status-block ${status.state}`} aria-label="AI 解析状态">
+    <h2>AI 解析</h2>
+    <p>{status.message}</p>
   </section>
 );
 

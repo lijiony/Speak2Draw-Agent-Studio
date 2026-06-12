@@ -5,6 +5,7 @@ declare global {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => Promise<void>;
       getScene: () => { objects: Array<{ name: string; kind: string; x: number; style: { fill: string } }> };
+      getAiStatus: () => { state: string; message: string };
     };
   }
 }
@@ -120,9 +121,42 @@ test('本地规则不确定时可以通过 AI 兜底解析自然语言', async (
 
   await submitVoiceText(page, '月亮换个梦幻感');
   await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
+  await expect(aiStatus(page)).toContainText('DeepSeek 已解析为 update_style。');
   await expect(page.locator('svg circle[fill="#ec4899"]')).toHaveCount(1);
 
+  expect(await page.evaluate(() => window.__speak2drawTest?.getAiStatus())).toMatchObject({
+    state: 'used',
+    message: 'DeepSeek 已解析为 update_style。'
+  });
   expect(aiRequests.map((request) => request.transcript)).toEqual(['月亮换个梦幻感']);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('DeepSeek 未配置时会展示 AI 回退原因且不误改画布', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false,
+        provider: 'local',
+        reason: '未配置 DEEPSEEK_API_KEY。'
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一个蓝色圆形叫月亮');
+  await submitVoiceText(page, '月亮换个梦幻感');
+
+  await expect(aiStatus(page)).toContainText('未配置 DEEPSEEK_API_KEY。');
+  await expect(systemFeedback(page)).toContainText('暂不支持这条指令。');
+  await expect(page.locator('svg circle[fill="#2563eb"]')).toHaveCount(1);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getAiStatus())).toMatchObject({
+    state: 'fallback',
+    message: '未配置 DEEPSEEK_API_KEY。'
+  });
   expect(consoleErrors).toEqual([]);
 });
 
@@ -240,6 +274,9 @@ const submitVoiceText = async (page: Page, text: string) => {
 
 const systemFeedback = (page: Page) =>
   page.locator('section.info-block').filter({ hasText: '系统反馈' }).locator('p');
+
+const aiStatus = (page: Page) =>
+  page.locator('section[aria-label="AI 解析状态"]').locator('p');
 
 const collectConsoleErrors = (page: Page) => {
   const errors: string[] = [];
