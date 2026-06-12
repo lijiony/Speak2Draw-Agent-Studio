@@ -1,5 +1,6 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH, createSceneObject, findObject } from './sceneModel';
 import type { DrawingCommand, DrawingIntent, SceneState, ShapeKind } from './types';
+import { normalizeVoiceText } from './voiceText';
 
 let nextId = 1;
 
@@ -66,7 +67,7 @@ const createCommand = (shape: ShapeKind, intent: DrawingIntent): DrawingCommand 
 });
 
 const createComplexCommands = (rawText: string): DrawingCommand[] => {
-  const text = rawText.replace(/\s+/g, '');
+  const text = normalizeVoiceText(rawText);
   const commands: DrawingCommand[] = [];
 
   if (text.includes('房子')) {

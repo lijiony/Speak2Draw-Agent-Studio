@@ -18,4 +18,13 @@ describe('planCommands', () => {
     const plan = planCommands(intent, createEmptyScene());
     expect(plan.needsClarification).toBe(true);
   });
+
+  it('按归一化后的复杂场景文本生成绘图步骤', () => {
+    const intent: DrawingIntent = { type: 'create_complex_scene', rawText: '名字和太阳。' };
+    const plan = planCommands(intent, createEmptyScene());
+    const objectNames = plan.commands.map((command) => command.object?.name ?? '');
+
+    expect(objectNames.some((name) => name.includes('房子'))).toBe(true);
+    expect(objectNames).toContain('太阳');
+  });
 });

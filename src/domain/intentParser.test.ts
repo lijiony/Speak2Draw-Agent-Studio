@@ -46,4 +46,29 @@ describe('parseIntent', () => {
     expect(intent.selector?.shape).toBe('circle');
     expect(intent.selector?.color).toBe('#ef4444');
   });
+
+  it('修正语音识别中的常见图形偏差', () => {
+    const intent = parseIntent(transcript('绘制一个粉色圆型'));
+    expect(intent.type).toBe('create_shape');
+    expect(intent.shape).toBe('circle');
+    expect(intent.color).toBe('#ec4899');
+  });
+
+  it('支持更口语化的移动方向', () => {
+    const intent = parseIntent(transcript('往右边挪一点'));
+    expect(intent.type).toBe('move_object');
+    expect(intent.direction).toBe('right');
+  });
+
+  it('复杂场景中把名字误识别纠正为房子', () => {
+    const intent = parseIntent(transcript('名字和太阳'));
+    expect(intent.type).toBe('create_complex_scene');
+  });
+
+  it('明确文字输入时不把名字改成房子', () => {
+    const intent = parseIntent(transcript('写名字'));
+    expect(intent.type).toBe('create_shape');
+    expect(intent.shape).toBe('text');
+    expect(intent.text).toBe('名字');
+  });
 });

@@ -1,4 +1,5 @@
 import type { DrawingIntent, ShapeKind, VoiceTranscript } from './types';
+import { includesAny, normalizeVoiceText } from './voiceText';
 
 const COLORS: Record<string, string> = {
   红: '#ef4444',
@@ -18,7 +19,9 @@ const COLORS: Record<string, string> = {
   橙: '#f97316',
   橙色: '#f97316',
   灰: '#6b7280',
-  灰色: '#6b7280'
+  灰色: '#6b7280',
+  粉: '#ec4899',
+  粉色: '#ec4899'
 };
 
 const SHAPES: Array<[string, ShapeKind]> = [
@@ -26,6 +29,7 @@ const SHAPES: Array<[string, ShapeKind]> = [
   ['矩形', 'rectangle'],
   ['长方形', 'rectangle'],
   ['方块', 'rectangle'],
+  ['正方形', 'rectangle'],
   ['圆形', 'circle'],
   ['圆', 'circle'],
   ['椭圆', 'ellipse'],
@@ -45,13 +49,13 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
     return clarify(rawText, '语音置信度较低，请再说一遍。');
   }
 
-  if (/(撤销|取消上一步|退回)/.test(text)) return { type: 'undo', rawText };
-  if (/(重做|恢复上一步)/.test(text)) return { type: 'redo', rawText };
-  if (/(清空|清除画布|全部删除)/.test(text)) return { type: 'clear_canvas', rawText };
-  if (/(导出|保存图片|下载图片)/.test(text)) return { type: 'export_canvas', rawText };
-  if (/(删除|删掉|移除)/.test(text)) return { type: 'delete_object', rawText, selector: { mode: 'selected' } };
+  if (/(撤销|取消上一步|退回|撤回)/.test(text)) return { type: 'undo', rawText };
+  if (/(重做|恢复上一步|再做一次)/.test(text)) return { type: 'redo', rawText };
+  if (/(清空|清除画布|全部删除|重新开始)/.test(text)) return { type: 'clear_canvas', rawText };
+  if (/(导出|保存图片|下载图片|保存作品)/.test(text)) return { type: 'export_canvas', rawText };
+  if (/(删除|删掉|移除|去掉|擦掉)/.test(text)) return { type: 'delete_object', rawText, selector: { mode: 'selected' } };
 
-  if (/(选择|选中)/.test(text)) {
+  if (/(选择|选中|选一下|找到|定位到)/.test(text)) {
     const shape = detectShape(text);
     const color = detectColor(text);
     const name = detectObjectName(text);
@@ -72,11 +76,11 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
   if (resize) return { type: 'resize_object', rawText, selector: { mode: 'selected' }, scale: resize };
 
   const direction = detectDirection(text);
-  if (/(移动|挪|放到|移到|向左|向右|向上|向下|中间|左上|右上|左下|右下)/.test(text) && direction) {
+  if (/(移动|挪|放到|移到|向左|向右|向上|向下|往左|往右|往上|往下|中间|左上|右上|左下|右下)/.test(text) && direction) {
     return { type: 'move_object', rawText, selector: { mode: 'selected' }, direction };
   }
 
-  if (/(改成|换成|变成|填充|颜色|描边|线条加粗|加粗|细一点)/.test(text)) {
+  if (/(改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点)/.test(text)) {
     const color = detectColor(text);
     const strokeWidth = text.includes('加粗') ? 8 : text.includes('细一点') ? 2 : undefined;
     return {
@@ -92,7 +96,7 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
   const complex = detectComplexScene(text, rawText);
   if (complex) return complex;
 
-  if (/(画|添加|创建|写)/.test(text)) {
+  if (/(画|添加|创建|绘制|生成|来一个|写)/.test(text)) {
     const shape = detectShape(text) ?? (text.includes('写') ? 'text' : undefined);
     if (!shape) return clarify(rawText, '听到了创建指令，但没有识别出要画的图形。');
     return {
@@ -108,7 +112,7 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
   return { type: 'unknown', rawText, reason: '暂不支持这条指令。' };
 };
 
-export const normalize = (value: string) => value.replace(/[，。！？、,.!?]/g, '').replace(/\s+/g, '');
+export const normalize = normalizeVoiceText;
 
 export const detectColor = (text: string) => {
   const key = Object.keys(COLORS).find((color) => text.includes(color));
@@ -118,7 +122,7 @@ export const detectColor = (text: string) => {
 export const detectShape = (text: string) => SHAPES.find(([label]) => text.includes(label))?.[1];
 
 const detectObjectName = (text: string) => {
-  if (text.includes('房子')) return '房子';
+  if (includesAny(text, ['房子', '房屋', '小屋', '屋子'])) return '房子';
   if (text.includes('太阳')) return '太阳';
   if (text.includes('树')) return '树';
   if (text.includes('机器人')) return '机器人';
@@ -127,7 +131,9 @@ const detectObjectName = (text: string) => {
 
 const detectComplexScene = (text: string, rawText: string): DrawingIntent | null => {
   if (/(房子|太阳|树|机器人)/.test(text)) return { type: 'create_complex_scene', rawText };
-  if (/(和|还有|同时)/.test(text) && /(画|添加|创建)/.test(text)) return { type: 'create_complex_scene', rawText };
+  if (/(和|还有|同时|一起|加上)/.test(text) && /(画|添加|创建|绘制|生成|来一个)/.test(text)) {
+    return { type: 'create_complex_scene', rawText };
+  }
   return null;
 };
 
@@ -147,16 +153,16 @@ const detectDirection = (text: string): DrawingIntent['direction'] => {
   if (text.includes('左下')) return 'bottom-left';
   if (text.includes('右下')) return 'bottom-right';
   if (text.includes('中间') || text.includes('居中') || text.includes('中央')) return 'center';
-  if (text.includes('向左') || text.includes('左移')) return 'left';
-  if (text.includes('向右') || text.includes('右移')) return 'right';
-  if (text.includes('向上') || text.includes('上移')) return 'up';
-  if (text.includes('向下') || text.includes('下移')) return 'down';
+  if (text.includes('向左') || text.includes('往左') || text.includes('左移') || text.includes('左边')) return 'left';
+  if (text.includes('向右') || text.includes('往右') || text.includes('右移') || text.includes('右边')) return 'right';
+  if (text.includes('向上') || text.includes('往上') || text.includes('上移') || text.includes('上面')) return 'up';
+  if (text.includes('向下') || text.includes('往下') || text.includes('下移') || text.includes('下面')) return 'down';
   return undefined;
 };
 
 const detectResize = (text: string) => {
-  if (/(放大|变大|大一点)/.test(text)) return 1.2;
-  if (/(缩小|变小|小一点)/.test(text)) return 0.8;
+  if (/(放大|变大|大一点|大一些)/.test(text)) return 1.2;
+  if (/(缩小|变小|小一点|小一些)/.test(text)) return 0.8;
   return undefined;
 };
 
