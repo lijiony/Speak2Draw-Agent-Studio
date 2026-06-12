@@ -1,5 +1,5 @@
 import type { DrawingIntent, SceneState, VoiceTranscript } from '../domain/types';
-import type { AiIntentResponsePayload } from './aiIntentContract';
+import type { AiClarificationContext, AiIntentResponsePayload } from './aiIntentContract';
 import { normalizeAiIntent, toAiIntentRequestPayload } from './aiIntentContract';
 
 type PlanLike = {
@@ -17,6 +17,7 @@ export const resolveAiIntent = async (
   transcript: VoiceTranscript,
   scene: SceneState,
   localReason?: string,
+  clarificationContext?: AiClarificationContext,
   fetcher: FetchLike = fetch
 ): Promise<AiIntentResponsePayload> => {
   try {
@@ -25,7 +26,7 @@ export const resolveAiIntent = async (
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(toAiIntentRequestPayload(transcript.text, scene, localReason))
+      body: JSON.stringify(toAiIntentRequestPayload(transcript.text, scene, localReason, clarificationContext))
     });
 
     if (!response.ok) {

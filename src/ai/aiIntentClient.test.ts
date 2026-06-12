@@ -36,7 +36,7 @@ describe('aiIntentClient', () => {
       );
     });
 
-    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), '本地规则无法理解', fetcher as unknown as typeof fetch);
+    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), '本地规则无法理解', undefined, fetcher as unknown as typeof fetch);
     const requestBody = JSON.parse(submittedBody) as { transcript: string; localReason?: string };
 
     expect(requestBody).toMatchObject({ transcript: '月亮换个梦幻感', localReason: '本地规则无法理解' });
@@ -55,7 +55,7 @@ describe('aiIntentClient', () => {
       throw new Error('network');
     });
 
-    const result = await resolveAiIntent(transcript('画一只猫'), createEmptyScene(), undefined, fetcher as unknown as typeof fetch);
+    const result = await resolveAiIntent(transcript('画一只猫'), createEmptyScene(), undefined, undefined, fetcher as unknown as typeof fetch);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -75,12 +75,57 @@ describe('aiIntentClient', () => {
       )
     );
 
-    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), undefined, fetcher as unknown as typeof fetch);
+    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), undefined, undefined, fetcher as unknown as typeof fetch);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.provider).toBe('local');
       expect(result.reason).toBe('未配置 DEEPSEEK_API_KEY。');
     }
+  });
+
+  it('发送上一轮澄清上下文给 AI', async () => {
+    let submittedBody = '';
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      submittedBody = init?.body as string;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          provider: 'deepseek',
+          model: 'deepseek-v4-flash',
+          intent: {
+            type: 'create_shape',
+            shape: 'circle',
+            color: '#ef4444'
+          } satisfies Partial<DrawingIntent>
+        }),
+        { status: 200 }
+      );
+    });
+
+    await resolveAiIntent(
+      transcript('红色圆形'),
+      createEmptyScene(),
+      '上一轮需要澄清',
+      {
+        originalTranscript: '画一个',
+        question: '听到了创建指令，但没有识别出要画的图形。',
+        reason: '缺少图形'
+      },
+      fetcher as unknown as typeof fetch
+    );
+
+    const requestBody = JSON.parse(submittedBody) as {
+      transcript: string;
+      clarificationContext?: { originalTranscript: string; question: string; reason?: string };
+    };
+    expect(requestBody).toMatchObject({
+      transcript: '红色圆形',
+      clarificationContext: {
+        originalTranscript: '画一个',
+        question: '听到了创建指令，但没有识别出要画的图形。',
+        reason: '缺少图形'
+      }
+    });
   });
 });

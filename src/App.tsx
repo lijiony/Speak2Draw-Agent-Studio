@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Mic, MicOff, RotateCcw, Sparkles, Volume2 } from 'lucide-react';
 import { resolveAiIntent, shouldUseAiIntentFallback } from './ai/aiIntentClient';
+import type { AiClarificationContext } from './ai/aiIntentContract';
 import { planCommands } from './domain/commandPlanner';
 import { executeDrawingCommands } from './domain/drawingExecutor';
 import { parseIntent } from './domain/intentParser';
@@ -15,12 +16,17 @@ type AiResolutionStatus = {
   message: string;
 };
 
+type ClarificationState = AiClarificationContext & {
+  waiting: true;
+};
+
 declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => Promise<void>;
       getScene: () => SceneState;
       getAiStatus: () => AiResolutionStatus;
+      getClarification: () => ClarificationState | null;
     };
   }
 }
@@ -37,6 +43,8 @@ export const App = () => {
     message: '等待需要 AI 协助的语音指令。'
   }));
   const aiStatusRef = useRef(aiStatus);
+  const [clarification, setClarification] = useState<ClarificationState | null>(null);
+  const clarificationRef = useRef<ClarificationState | null>(null);
   const [history, setHistory] = useState<string[]>([]);
 
   useEffect(() => {
@@ -47,19 +55,29 @@ export const App = () => {
     aiStatusRef.current = aiStatus;
   }, [aiStatus]);
 
+  useEffect(() => {
+    clarificationRef.current = clarification;
+  }, [clarification]);
+
   const handleTranscript = useCallback(
     async (transcript: VoiceTranscript) => {
       const currentScene = sceneRef.current;
+      const activeClarification = clarificationRef.current;
       const localIntent = parseIntent(transcript);
       let plan = planCommands(localIntent, currentScene);
       let aiHistoryLabel = '本地规则';
 
-      if (shouldUseAiIntentFallback(localIntent, plan, transcript)) {
+      if (activeClarification || shouldUseAiIntentFallback(localIntent, plan, transcript)) {
         setAiStatus({
           state: 'checking',
-          message: '正在请求 DeepSeek 解析这条语音。'
+          message: activeClarification ? '正在结合上一轮澄清请求 DeepSeek。' : '正在请求 DeepSeek 解析这条语音。'
         });
-        const aiResult = await resolveAiIntent(transcript, currentScene, plan.message ?? localIntent.reason);
+        const aiResult = await resolveAiIntent(
+          transcript,
+          currentScene,
+          activeClarification ? activeClarification.question : plan.message ?? localIntent.reason,
+          activeClarification ?? undefined
+        );
         if (aiResult.ok) {
           plan = planCommands(aiResult.intent, currentScene);
           aiHistoryLabel = 'DeepSeek';
@@ -82,6 +100,19 @@ export const App = () => {
       }
 
       const result = executeDrawingCommands(currentScene, plan.commands, transcript, plan);
+      if (result.needsClarification) {
+        const nextClarification: ClarificationState = {
+          waiting: true,
+          originalTranscript: activeClarification?.originalTranscript ?? transcript.text,
+          question: result.message,
+          reason: plan.message ?? localIntent.reason
+        };
+        setClarification(nextClarification);
+        clarificationRef.current = nextClarification;
+      } else {
+        setClarification(null);
+        clarificationRef.current = null;
+      }
       setLastTranscript(transcript.text);
       setScene(result.scene);
       sceneRef.current = result.scene;
@@ -104,7 +135,8 @@ export const App = () => {
           isFinal: true
         }),
       getScene: () => sceneRef.current,
-      getAiStatus: () => aiStatusRef.current
+      getAiStatus: () => aiStatusRef.current,
+      getClarification: () => clarificationRef.current
     };
 
     return () => {
@@ -154,6 +186,7 @@ export const App = () => {
             <StatusBlock status={status} error={error} activity={activity} />
             <MicrophoneTestBlock status={micTestStatus} result={micTestResult} onTest={handleMicrophoneTest} />
             <AiStatusBlock status={aiStatus} />
+            {clarification ? <InfoBlock title="等待补充" value={clarification.question} /> : null}
             <InfoBlock title="最近听到" value={lastTranscript} />
             <InfoBlock title="系统反馈" value={lastResult?.message ?? '启动监听后，说出绘图指令。'} />
             <dl className="metrics">

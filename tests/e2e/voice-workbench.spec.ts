@@ -6,6 +6,7 @@ declare global {
       submitTranscript: (text: string, confidence?: number) => Promise<void>;
       getScene: () => { objects: Array<{ name: string; kind: string; x: number; style: { fill: string } }> };
       getAiStatus: () => { state: string; message: string };
+      getClarification: () => { originalTranscript: string; question: string } | null;
     };
   }
 }
@@ -157,6 +158,77 @@ test('DeepSeek 未配置时会展示 AI 回退原因且不误改画布', async (
     state: 'fallback',
     message: '未配置 DEEPSEEK_API_KEY。'
   });
+  expect(consoleErrors).toEqual([]);
+});
+
+test('用户可以用下一句语音补充 AI 澄清问题', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+  const aiRequests: Array<{
+    transcript: string;
+    clarificationContext?: { originalTranscript: string; question: string };
+  }> = [];
+
+  await page.route('**/api/ai/intent', async (route) => {
+    const requestBody = route.request().postDataJSON() as {
+      transcript: string;
+      clarificationContext?: { originalTranscript: string; question: string };
+    };
+    aiRequests.push(requestBody);
+
+    if (!requestBody.clarificationContext) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          provider: 'deepseek',
+          model: 'deepseek-v4-flash',
+          intent: {
+            type: 'clarify',
+            reason: '你想画什么角色？'
+          }
+        })
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        intent: {
+          type: 'create_asset_recipe',
+          recipe: [
+            { shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 370, y: 230 }, width: 160, height: 140 },
+            { shape: 'rectangle', name: '红色帽子', color: '#ef4444', position: { x: 405, y: 185 }, width: 100, height: 36 }
+          ]
+        }
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一个神秘角色');
+  await expect(systemFeedback(page)).toContainText('你想画什么角色？');
+  await expect(page.locator('section.info-block').filter({ hasText: '等待补充' }).locator('p')).toContainText('你想画什么角色？');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getClarification())).toMatchObject({
+    originalTranscript: '画一个神秘角色',
+    question: '你想画什么角色？'
+  });
+
+  await submitVoiceText(page, '戴红帽子的猫');
+  await expect(systemFeedback(page)).toContainText('已拆解并执行 2 个绘图步骤。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getClarification())).toBeNull();
+  expect(aiRequests[1]).toMatchObject({
+    transcript: '戴红帽子的猫',
+    clarificationContext: {
+      originalTranscript: '画一个神秘角色',
+      question: '你想画什么角色？'
+    }
+  });
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? [])).toEqual(['猫脸', '红色帽子']);
   expect(consoleErrors).toEqual([]);
 });
 

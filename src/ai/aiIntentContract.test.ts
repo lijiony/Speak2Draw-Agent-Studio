@@ -8,11 +8,16 @@ describe('aiIntentContract', () => {
       type: 'create_object',
       object: createSceneObject('circle', { id: 'shape-1', name: '月亮', fill: '#2563eb' })
     });
-    const payload = toAiIntentRequestPayload('让月亮更梦幻', scene, '本地规则无法理解');
+    const payload = toAiIntentRequestPayload('让月亮更梦幻', scene, '本地规则无法理解', {
+      originalTranscript: '把月亮改一下',
+      question: '需要说明改成什么样。'
+    });
     const messages = buildDeepSeekMessages(payload);
 
     expect(payload.scene.objects).toEqual([{ name: '月亮', kind: 'circle', fill: '#2563eb' }]);
     expect(payload.scene.selectedName).toBe('月亮');
+    expect(payload.clarificationContext?.originalTranscript).toBe('把月亮改一下');
+    expect(messages[0].content).toContain('clarificationContext');
     expect(JSON.stringify(messages)).not.toContain('DEEPSEEK_API_KEY');
   });
 

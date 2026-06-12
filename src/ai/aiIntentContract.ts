@@ -11,6 +11,13 @@ export interface AiIntentRequestPayload {
     selectedName: string | null;
   };
   localReason?: string;
+  clarificationContext?: AiClarificationContext;
+}
+
+export interface AiClarificationContext {
+  originalTranscript: string;
+  question: string;
+  reason?: string;
 }
 
 export interface AiIntentSuccessPayload {
@@ -54,9 +61,15 @@ const SHAPES: ShapeKind[] = ['circle', 'rectangle', 'ellipse', 'line', 'triangle
 const DIRECTIONS: Array<NonNullable<DrawingIntent['direction']>> = ['left', 'right', 'up', 'down', 'center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const LAYERS: LayerDirection[] = ['front', 'back', 'forward', 'backward'];
 
-export const toAiIntentRequestPayload = (transcript: string, scene: SceneState, localReason?: string): AiIntentRequestPayload => ({
+export const toAiIntentRequestPayload = (
+  transcript: string,
+  scene: SceneState,
+  localReason?: string,
+  clarificationContext?: AiClarificationContext
+): AiIntentRequestPayload => ({
   transcript,
   localReason,
+  clarificationContext,
   scene: {
     objects: scene.objects.map((object) => ({
       name: object.name,
@@ -73,6 +86,7 @@ export const buildDeepSeekMessages = (payload: AiIntentRequestPayload) => [
     content:
       '你是 Speak2Draw 的中文语音绘图意图解析器。只输出 JSON，不要解释。' +
       `把用户语音转换成一个 DrawingIntent。允许的 type：${INTENT_TYPES.join(', ')}。` +
+      '如果请求包含 clarificationContext，说明上一轮语音没有执行成功；请把 originalTranscript、question 和本轮 transcript 合并理解，优先输出可执行意图。' +
       'shape 只能是 circle, rectangle, ellipse, line, triangle, text。direction 只能是 left, right, up, down, center, top-left, top-right, bottom-left, bottom-right。' +
       '当用户要画猫、船、云、人物等内置图形没有的元素时，优先返回 create_asset_recipe，并用 recipe 数组拆成多个安全矢量对象。recipe 每项只允许 shape, name, color, strokeColor, strokeWidth, position, width, height, text。' +
       '颜色使用十六进制，例如红色 #ef4444、蓝色 #2563eb、绿色 #16a34a、黄色 #facc15、黑色 #111827、紫色 #7c3aed、粉色 #ec4899。' +
