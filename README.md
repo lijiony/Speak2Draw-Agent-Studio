@@ -34,6 +34,8 @@ DEEPSEEK_TIMEOUT_MS=8000
 
 不要提交 `.env.local`、token、密钥或账号密码。
 
+生产部署到 Netlify 时，在站点环境变量中配置同名的 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 `DEEPSEEK_TIMEOUT_MS`。项目已提供 `netlify.toml` 和 `/api/ai/intent` Netlify Function，生产环境同样由服务端函数持有 DeepSeek API Key。
+
 页面右侧会显示“AI 解析”状态：明确指令会显示本地规则处理；自然语言兜底成功会显示 DeepSeek 解析出的意图类型；未配置、超时或返回不安全内容时会显示回退原因，并保留本地澄清反馈。
 
 如果系统需要进一步确认，会在右侧显示“等待补充”。这时用户可以继续用下一句语音补充，不需要鼠标或键盘，例如先说“画一个神秘角色”，系统询问后再说“戴红帽子的猫”。
