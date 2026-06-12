@@ -23,6 +23,8 @@ DEEPSEEK_TIMEOUT_MS=8000
 
 `.env.local` 必须保持本地 ignored 状态，不能提交到远程仓库。
 
+生产部署到 Netlify 时，在站点环境变量中配置同名变量。仓库中的 `netlify.toml` 会构建 `dist`，`netlify/functions/ai-intent.ts` 会把 `/api/ai/intent` 映射到 Netlify Function；函数通过 `Netlify.env.get` 读取 DeepSeek 配置，不从浏览器端读取密钥。
+
 ## API 入口
 
 浏览器端只调用本地代理：
@@ -32,7 +34,7 @@ POST /api/ai/intent
 Content-Type: application/json
 ```
 
-Vite 本地代理再调用：
+Vite 本地代理或 Netlify Function 再调用：
 
 ```http
 POST https://api.deepseek.com/chat/completions
