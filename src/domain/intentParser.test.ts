@@ -85,6 +85,27 @@ describe('parseIntent', () => {
     expect(textUpdated.text).toBe('你好世界');
   });
 
+  it('解析成组、取消成组、对齐和分布指令', () => {
+    const grouped = parseIntent(transcript('把月亮和太阳成组叫夜空'));
+    expect(grouped.type).toBe('group_objects');
+    expect(grouped.selector).toMatchObject({ mode: 'by_names', names: ['月亮', '太阳'] });
+    expect(grouped.name).toBe('夜空');
+
+    const ungrouped = parseIntent(transcript('取消夜空的分组'));
+    expect(ungrouped.type).toBe('ungroup_objects');
+    expect(ungrouped.selector).toMatchObject({ mode: 'by_name', name: '夜空' });
+
+    const aligned = parseIntent(transcript('把所有图形左对齐'));
+    expect(aligned.type).toBe('align_objects');
+    expect(aligned.selector).toMatchObject({ mode: 'all' });
+    expect(aligned.alignment).toBe('left');
+
+    const distributed = parseIntent(transcript('水平分布所有图形'));
+    expect(distributed.type).toBe('distribute_objects');
+    expect(distributed.selector).toMatchObject({ mode: 'all' });
+    expect(distributed.axis).toBe('horizontal');
+  });
+
   it('选择红色圆形时使用形状和颜色选择器', () => {
     const intent = parseIntent(transcript('选择红色圆形'));
     expect(intent.type).toBe('select_object');

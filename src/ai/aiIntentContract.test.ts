@@ -29,9 +29,12 @@ describe('aiIntentContract', () => {
     expect(messages[0].content).toContain('rename_object');
     expect(messages[0].content).toContain('duplicate_object');
     expect(messages[0].content).toContain('update_text');
+    expect(messages[0].content).toContain('align_objects');
+    expect(messages[0].content).toContain('distribute_objects');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.create_shape).toContain('shape');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.rename_object).toContain('name');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.update_text).toContain('text');
+    expect(AI_INTENT_JSON_SCHEMA.intentRequirements.align_objects).toContain('alignment');
     expect(JSON.stringify(messages)).not.toContain('DEEPSEEK_API_KEY');
   });
 
@@ -103,6 +106,8 @@ describe('aiIntentContract', () => {
     expect(normalizeAiIntent({ type: 'create_shape', color: '#ef4444' }, '画红色的')).toBeNull();
     expect(normalizeAiIntent({ type: 'update_style', selector: { mode: 'selected' } }, '变漂亮')).toBeNull();
     expect(normalizeAiIntent({ type: 'move_object', selector: { mode: 'selected' } }, '移动一下')).toBeNull();
+    expect(normalizeAiIntent({ type: 'align_objects', selector: { mode: 'all' } }, '对齐')).toBeNull();
+    expect(normalizeAiIntent({ type: 'distribute_objects', selector: { mode: 'all' } }, '分布')).toBeNull();
     expect(normalizeAiIntent({ type: 'create_asset_recipe', recipe: [] }, '画一只猫')).toBeNull();
     expect(normalizeAiIntent({ type: 'clarify' }, '那个')).toBeNull();
   });
@@ -139,6 +144,41 @@ describe('aiIntentContract', () => {
         '把文字改成新的标题'
       )
     ).toMatchObject({ type: 'update_text', text: '新的标题' });
+  });
+
+  it('接受成组、对齐和均匀分布意图', () => {
+    expect(
+      normalizeAiIntent(
+        {
+          type: 'group_objects',
+          selector: { mode: 'by_names', names: ['月亮', '太阳'] },
+          name: '夜空'
+        },
+        '把月亮和太阳成组'
+      )
+    ).toMatchObject({ type: 'group_objects', selector: { mode: 'by_names', names: ['月亮', '太阳'] } });
+
+    expect(
+      normalizeAiIntent(
+        {
+          type: 'align_objects',
+          selector: { mode: 'all' },
+          alignment: 'left'
+        },
+        '把所有图形左对齐'
+      )
+    ).toMatchObject({ type: 'align_objects', alignment: 'left' });
+
+    expect(
+      normalizeAiIntent(
+        {
+          type: 'distribute_objects',
+          selector: { mode: 'all' },
+          axis: 'horizontal'
+        },
+        '水平分布所有图形'
+      )
+    ).toMatchObject({ type: 'distribute_objects', axis: 'horizontal' });
   });
 
   it('拒绝 sequence 中混入无法执行或澄清意图', () => {

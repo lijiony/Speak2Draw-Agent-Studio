@@ -144,6 +144,47 @@ describe('voice drawing flow', () => {
     expect(updated.message).toBe('已更新文字内容。');
   });
 
+  it('支持语音成组、对齐、分布和取消成组', () => {
+    resetCommandIdsForTest();
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '月亮', x: 40, y: 120, width: 40, height: 40 })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-2', name: '太阳', x: 300, y: 220, width: 40, height: 40 })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-3', name: '云朵', x: 140, y: 300, width: 40, height: 40 })
+      }
+    ]);
+
+    const groupInput = transcript('把月亮和太阳成组叫夜空');
+    const groupPlan = planCommands(parseIntent(groupInput), scene);
+    const grouped = executeDrawingCommands(scene, groupPlan.commands, groupInput, groupPlan);
+    expect(grouped.ok).toBe(true);
+    expect(grouped.scene.objects.filter((object) => object.groupName === '夜空')).toHaveLength(2);
+
+    const alignInput = transcript('把所有图形左对齐');
+    const alignPlan = planCommands(parseIntent(alignInput), grouped.scene);
+    const aligned = executeDrawingCommands(grouped.scene, alignPlan.commands, alignInput, alignPlan);
+    expect(aligned.message).toBe('已对齐目标图形。');
+    expect(new Set(aligned.scene.objects.map((object) => object.x)).size).toBe(1);
+
+    const distributeInput = transcript('水平分布所有图形');
+    const distributePlan = planCommands(parseIntent(distributeInput), grouped.scene);
+    const distributed = executeDrawingCommands(grouped.scene, distributePlan.commands, distributeInput, distributePlan);
+    expect(distributed.message).toBe('已均匀分布目标图形。');
+
+    const ungroupInput = transcript('取消夜空的分组');
+    const ungroupPlan = planCommands(parseIntent(ungroupInput), distributed.scene);
+    const ungrouped = executeDrawingCommands(distributed.scene, ungroupPlan.commands, ungroupInput, ungroupPlan);
+    expect(ungrouped.message).toBe('已取消目标素材组。');
+    expect(ungrouped.scene.objects.filter((object) => object.groupName === '夜空')).toHaveLength(0);
+  });
+
   it('按对象名称调整图层顺序', () => {
     resetCommandIdsForTest();
     const createInput = transcript('画一个房子和太阳');

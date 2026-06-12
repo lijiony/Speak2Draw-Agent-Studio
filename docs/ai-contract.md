@@ -167,6 +167,55 @@ DeepSeek 必须优先返回包裹格式：
 
 - `direction` 必须是 `left`、`right`、`up`、`down`、`center`、`top-left`、`top-right`、`bottom-left`、`bottom-right` 之一。
 
+### 成组、取消成组、对齐和分布
+
+```json
+{
+  "schemaVersion": "1.0",
+  "intent": {
+    "type": "group_objects",
+    "selector": {
+      "mode": "by_names",
+      "names": ["月亮", "太阳"]
+    },
+    "name": "夜空"
+  }
+}
+```
+
+```json
+{
+  "schemaVersion": "1.0",
+  "intent": {
+    "type": "align_objects",
+    "selector": {
+      "mode": "all"
+    },
+    "alignment": "left"
+  }
+}
+```
+
+```json
+{
+  "schemaVersion": "1.0",
+  "intent": {
+    "type": "distribute_objects",
+    "selector": {
+      "mode": "all"
+    },
+    "axis": "horizontal"
+  }
+}
+```
+
+要求：
+
+- `selector.mode` 可以使用 `all`、`by_name`、`by_names`、`selected` 或 `last`。
+- `align_objects` 必须包含 `alignment`，合法值为 `left`、`center-x`、`right`、`top`、`center-y`、`bottom`。
+- `distribute_objects` 必须包含 `axis`，合法值为 `horizontal` 或 `vertical`。
+- 成组和布局命令只修改本地 SceneModel，不允许返回任意 SVG 或脚本。
+
 ### 缺失元素素材配方
 
 ```json
@@ -274,6 +323,7 @@ DeepSeek 必须优先返回包裹格式：
 - 非白名单 shape。
 - 非十六进制颜色。
 - 缺少每类 intent 的必填字段。
+- 非白名单对齐方式、分布轴或选择器模式。
 - 嵌套 `sequence`。
 - `sequence` 中混入 `unknown` 或 `clarify`。
 - 空 `recipe`。
@@ -327,6 +377,8 @@ DeepSeek 返回不安全内容：
    - `戴红帽子的猫`
    - `画一只戴帽子的猫`
    - `把猫向右移动一点`
+   - `把所有图形左对齐`
+   - `水平分布所有图形`
    - `画一个海边日落，有小船和云`
    - `画布里有什么`
 6. 观察右侧 AI 解析状态：

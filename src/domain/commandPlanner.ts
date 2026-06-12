@@ -1,5 +1,5 @@
-import { applyCommands, CANVAS_HEIGHT, CANVAS_WIDTH, createSceneObject, findObject } from './sceneModel';
-import type { DrawingCommand, DrawingIntent, SceneState, ShapeKind } from './types';
+import { applyCommands, CANVAS_HEIGHT, CANVAS_WIDTH, createSceneObject, findObject, findObjects } from './sceneModel';
+import type { DrawingCommand, DrawingIntent, SceneObject, SceneState, ShapeKind } from './types';
 import { normalizeVoiceText } from './voiceText';
 import { detectColor, detectShape } from './intentParser';
 
@@ -89,6 +89,59 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
           relatedObjects.length > 1
             ? `已复制并创建 ${relatedObjects.length} 个图形。`
             : '已复制目标图形。'
+        };
+    }
+    case 'group_objects': {
+      const targets = findObjects(scene.objects, intent.selector, scene.selectedId);
+      if (targets.length < 2) {
+        return {
+          commands: [],
+          message: '至少需要两个图形才能成组，请先画出多个对象或说“把所有图形成组”。',
+          needsClarification: true
+        };
+      }
+      const groupName = intent.name ?? inferGroupName(intent.rawText, targets);
+      return {
+        commands: [
+          {
+            type: 'group_objects',
+            selector: intent.selector,
+            groupId: createGroupId(),
+            groupName
+          }
+        ],
+        message: `已将 ${targets.length} 个图形成组为${groupName}。`
+      };
+    }
+    case 'ungroup_objects': {
+      const targets = findObjects(scene.objects, intent.selector, scene.selectedId);
+      if (targets.length === 0) return noTarget('当前没有可取消成组的图形。');
+      if (!targets.some((object) => object.groupId)) {
+        return { commands: [], message: '当前目标还没有成组。', needsClarification: true };
+      }
+      return {
+        commands: [{ type: 'ungroup_objects', selector: intent.selector }],
+        message: '已取消目标素材组。'
+      };
+    }
+    case 'align_objects': {
+      const targets = findObjects(scene.objects, intent.selector, scene.selectedId);
+      if (targets.length < 2) {
+        return { commands: [], message: '至少需要两个图形才能对齐。', needsClarification: true };
+      }
+      return {
+        commands: [{ type: 'align_objects', selector: intent.selector, alignment: intent.alignment }],
+        message: '已对齐目标图形。'
+      };
+    }
+    case 'distribute_objects': {
+      const targets = findObjects(scene.objects, intent.selector, scene.selectedId);
+      if (targets.length < 3) {
+        return { commands: [], message: '至少需要三个图形才能均匀分布。', needsClarification: true };
+      }
+      return {
+        commands: [{ type: 'distribute_objects', selector: intent.selector, axis: intent.axis }],
+        message: '已均匀分布目标图形。'
       };
     }
     case 'select_object': {
@@ -334,7 +387,7 @@ const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector'
   Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId));
 
 const HELP_MESSAGE =
-  '可以说：画一个红色圆形、画一个房子和太阳、选择太阳、把它改成黄色、把月亮改名为星星、复制星星、把文字改成世界、向右移动一点、撤销、导出图片，或问我画布里有什么。';
+  '可以说：画一个红色圆形、画一个房子和太阳、选择太阳、把它改成黄色、把月亮改名为星星、复制星星、把所有图形成组、把所有图形左对齐、水平分布所有图形、把文字改成世界、向右移动一点、撤销、导出图片，或问我画布里有什么。';
 
 const describeScene = (scene: SceneState) => {
   if (scene.objects.length === 0) return '画布目前是空的。可以先说“画一个红色圆形”。';
@@ -386,6 +439,15 @@ const noTarget = (message = '当前没有可编辑的图形，请先说“画一
   message,
   needsClarification: true
 });
+
+const inferGroupName = (rawText: string, targets: SceneObject[]) => {
+  const customName = detectCustomName(rawText);
+  if (customName) return customName;
+
+  const names = targets.map((object) => object.groupName ?? object.name).filter(Boolean);
+  const prefix = commonPrefix(names).slice(0, 8);
+  return prefix.length >= 2 ? `${prefix}组` : '语音组合';
+};
 
 const compactStyleUpdate = (updates: { style: { fill?: string; stroke?: string; strokeWidth?: number } }) => ({
   style: Object.fromEntries(Object.entries(updates.style).filter(([, value]) => value !== undefined)) as {

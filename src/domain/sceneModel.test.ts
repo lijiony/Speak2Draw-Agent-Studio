@@ -93,6 +93,57 @@ describe('sceneModel', () => {
     expect(deleted.objects).toHaveLength(0);
   });
 
+  it('支持把多个对象成组并取消成组', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '月亮' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-2', name: '太阳' })
+      }
+    ]);
+
+    const grouped = applyCommand(scene, {
+      type: 'group_objects',
+      selector: { mode: 'by_names', names: ['月亮', '太阳'] },
+      groupId: 'asset-voice-1',
+      groupName: '夜空'
+    });
+    expect(grouped.objects.map((object) => object.groupName)).toEqual(['夜空', '夜空']);
+
+    const moved = applyCommand(grouped, { type: 'move_object', selector: { mode: 'by_name', name: '夜空' }, direction: 'right' });
+    expect(moved.objects[0].x).toBeGreaterThan(grouped.objects[0].x);
+    expect(moved.objects[1].x).toBeGreaterThan(grouped.objects[1].x);
+
+    const ungrouped = applyCommand(moved, { type: 'ungroup_objects', selector: { mode: 'by_name', name: '夜空' } });
+    expect(ungrouped.objects.map((object) => object.groupName)).toEqual([undefined, undefined]);
+  });
+
+  it('支持对齐和均匀分布多个对象', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-1', name: '左', x: 20, y: 100, width: 20, height: 20 })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-2', name: '右', x: 300, y: 180, width: 20, height: 20 })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-3', name: '中', x: 100, y: 240, width: 20, height: 20 })
+      }
+    ]);
+
+    const aligned = applyCommand(scene, { type: 'align_objects', selector: { mode: 'all' }, alignment: 'left' });
+    expect(aligned.objects.map((object) => object.x)).toEqual([20, 20, 20]);
+
+    const distributed = applyCommand(scene, { type: 'distribute_objects', selector: { mode: 'all' }, axis: 'horizontal' });
+    expect(distributed.objects.map((object) => object.x)).toEqual([20, 300, 160]);
+  });
+
   it('支持调整图层顺序并撤销', () => {
     const base = createEmptyScene();
     const house = createSceneObject('rectangle', { id: 'shape-1', name: '房子墙体' });

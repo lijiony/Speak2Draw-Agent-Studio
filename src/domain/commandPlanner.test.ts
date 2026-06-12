@@ -133,6 +133,53 @@ describe('planCommands', () => {
     });
   });
 
+  it('支持规划成组、取消成组、对齐和均匀分布命令', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '月亮' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-2', name: '太阳' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-3', name: '云朵' })
+      }
+    ]);
+
+    const groupPlan = planCommands(parseIntent(transcript('把月亮和太阳成组叫夜空')), scene);
+    expect(groupPlan.commands[0]).toMatchObject({
+      type: 'group_objects',
+      selector: { mode: 'by_names', names: ['月亮', '太阳'] },
+      groupName: '夜空'
+    });
+
+    const groupedScene = applyCommandsAsTransaction(scene, groupPlan.commands);
+    const ungroupPlan = planCommands(parseIntent(transcript('取消夜空的分组')), groupedScene);
+    expect(ungroupPlan.commands[0]).toMatchObject({
+      type: 'ungroup_objects',
+      selector: { mode: 'by_name', name: '夜空' }
+    });
+
+    const alignPlan = planCommands(parseIntent(transcript('把所有图形左对齐')), scene);
+    expect(alignPlan.commands[0]).toMatchObject({ type: 'align_objects', selector: { mode: 'all' }, alignment: 'left' });
+
+    const distributePlan = planCommands(parseIntent(transcript('水平分布所有图形')), scene);
+    expect(distributePlan.commands[0]).toMatchObject({ type: 'distribute_objects', selector: { mode: 'all' }, axis: 'horizontal' });
+  });
+
+  it('布局类指令目标数量不足时要求澄清', () => {
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('circle', { id: 'shape-1', name: '月亮' })
+    });
+
+    expect(planCommands(parseIntent(transcript('把所有图形成组')), scene).needsClarification).toBe(true);
+    expect(planCommands(parseIntent(transcript('水平分布所有图形')), scene).needsClarification).toBe(true);
+  });
+
   it('目标对象不存在时，按名称编辑会要求澄清', () => {
     const scene = applyCommand(createEmptyScene(), {
       type: 'create_object',
