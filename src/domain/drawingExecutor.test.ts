@@ -61,4 +61,20 @@ describe('voice drawing flow', () => {
     expect(layered.message).toBe('已调整图层顺序。');
     expect(layered.scene.objects[layered.scene.objects.length - 1]?.name).toContain('房子');
   });
+
+  it('执行复合长句时会拆解创建和图层动作', () => {
+    resetCommandIdsForTest();
+    const input = transcript('画一个红色房子和蓝色太阳，再把房子放到最上层');
+    const intent = parseIntent(input);
+    const plan = planCommands(intent, createEmptyScene());
+    const result = executeDrawingCommands(createEmptyScene(), plan.commands, input, plan);
+    const sun = result.scene.objects.find((object) => object.name === '太阳');
+
+    expect(result.ok).toBe(true);
+    expect(result.message).toBe('已拆解并执行 6 个绘图步骤。');
+    expect(result.commandsExecuted).toBe(6);
+    expect(result.scene.objects).toHaveLength(5);
+    expect(sun?.style.fill).toBe('#2563eb');
+    expect(result.scene.objects[result.scene.objects.length - 1]?.name).toContain('房子');
+  });
 });

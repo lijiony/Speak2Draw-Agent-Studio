@@ -95,4 +95,13 @@ describe('parseIntent', () => {
     expect(back.selector).toMatchObject({ mode: 'by_name', name: '房子' });
     expect(back.layer).toBe('back');
   });
+
+  it('解析包含后续动作的复合长句', () => {
+    const intent = parseIntent(transcript('画一个红色房子和蓝色太阳，再把房子放到最上层'));
+
+    expect(intent.type).toBe('sequence');
+    expect(intent.intents?.map((item) => item.type)).toEqual(['create_complex_scene', 'reorder_object']);
+    expect(intent.intents?.[1].selector).toMatchObject({ mode: 'by_name', name: '房子' });
+    expect(intent.intents?.[1].layer).toBe('front');
+  });
 });

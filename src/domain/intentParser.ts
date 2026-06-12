@@ -49,10 +49,20 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
     return clarify(rawText, '语音置信度较低，请再说一遍。');
   }
 
+  return parseNormalizedIntent(rawText, text, true);
+};
+
+const parseNormalizedIntent = (rawText: string, text: string, allowSequence: boolean): DrawingIntent => {
   if (/(撤销|取消上一步|退回|撤回)/.test(text)) return { type: 'undo', rawText };
   if (/(重做|恢复上一步|再做一次)/.test(text)) return { type: 'redo', rawText };
   if (/(清空|清除画布|全部删除|重新开始)/.test(text)) return { type: 'clear_canvas', rawText };
   if (/(导出|保存图片|下载图片|保存作品)/.test(text)) return { type: 'export_canvas', rawText };
+
+  if (allowSequence) {
+    const sequence = detectSequenceIntent(rawText, text);
+    if (sequence) return sequence;
+  }
+
   if (/(删除|删掉|移除|去掉|擦掉)/.test(text)) {
     return { type: 'delete_object', rawText, selector: detectTargetSelector(text, true) };
   }
@@ -143,6 +153,27 @@ const detectTargetSelector = (text: string, allowShapeColor: boolean): ObjectSel
   const color = detectColor(text);
   return shape || color ? { mode: 'by_shape_color', shape, color } : { mode: 'selected' };
 };
+
+const detectSequenceIntent = (rawText: string, text: string): DrawingIntent | null => {
+  const parts = splitSequenceText(text);
+  if (parts.length < 2) return null;
+
+  const intents = parts.map((part) => parseNormalizedIntent(part, part, false));
+  if (intents.some((intent) => intent.type === 'unknown' || intent.type === 'clarify')) return null;
+
+  return {
+    type: 'sequence',
+    rawText,
+    intents
+  };
+};
+
+const splitSequenceText = (text: string) =>
+  text
+    .replace(/(然后|接着|随后|并且|再把|再将|再给|再让|再)/g, '|')
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean);
 
 const detectComplexScene = (text: string, rawText: string): DrawingIntent | null => {
   if (/(房子|太阳|树|机器人)/.test(text)) return { type: 'create_complex_scene', rawText };

@@ -2,6 +2,7 @@ export type ShapeKind = 'circle' | 'rectangle' | 'ellipse' | 'line' | 'triangle'
 export type LayerDirection = 'front' | 'back' | 'forward' | 'backward';
 
 export type DrawingIntentType =
+  | 'sequence'
   | 'create_shape'
   | 'create_complex_scene'
   | 'select_object'
@@ -74,6 +75,7 @@ export interface SceneState extends SceneSnapshot {
 export interface DrawingIntent {
   type: DrawingIntentType;
   rawText: string;
+  intents?: DrawingIntent[];
   shape?: ShapeKind;
   color?: string;
   strokeColor?: string;

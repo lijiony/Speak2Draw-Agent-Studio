@@ -39,6 +39,20 @@ test('语音文本可以驱动复杂绘图和按名称编辑', async ({ page }) 
   expect(consoleErrors).toEqual([]);
 });
 
+test('复合长句可以一次完成创建和图层调整', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个红色房子和蓝色太阳，再把房子放到最上层');
+  await expect(systemFeedback(page)).toContainText('已拆解并执行 6 个绘图步骤。');
+  await expect(page.locator('svg circle[fill="#2563eb"]')).toHaveCount(1);
+  await expect(page.locator('svg rect[fill="#ef4444"]')).toHaveCount(1);
+
+  const objectNames = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? []);
+  expect(objectNames).toHaveLength(5);
+  expect(objectNames[objectNames.length - 1]).toContain('房子');
+  expect(consoleErrors).toEqual([]);
+});
+
 test('语音文本归一化不会破坏文字输入', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 

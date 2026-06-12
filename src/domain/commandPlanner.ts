@@ -1,6 +1,7 @@
-import { CANVAS_HEIGHT, CANVAS_WIDTH, createSceneObject, findObject } from './sceneModel';
+import { applyCommands, CANVAS_HEIGHT, CANVAS_WIDTH, createSceneObject, findObject } from './sceneModel';
 import type { DrawingCommand, DrawingIntent, SceneState, ShapeKind } from './types';
 import { normalizeVoiceText } from './voiceText';
+import { detectColor } from './intentParser';
 
 let nextId = 1;
 
@@ -10,6 +11,8 @@ export const resetCommandIdsForTest = () => {
 
 export const planCommands = (intent: DrawingIntent, scene: SceneState): { commands: DrawingCommand[]; message?: string; needsClarification?: boolean } => {
   switch (intent.type) {
+    case 'sequence':
+      return planSequenceCommands(intent.intents ?? [], scene);
     case 'clarify':
       return { commands: [], message: intent.reason ?? '请再说一遍。', needsClarification: true };
     case 'unknown':
@@ -71,18 +74,20 @@ const createCommand = (shape: ShapeKind, intent: DrawingIntent): DrawingCommand 
 const createComplexCommands = (rawText: string): DrawingCommand[] => {
   const text = normalizeVoiceText(rawText);
   const commands: DrawingCommand[] = [];
+  const houseColor = detectEntityColor(text, '房子');
+  const sunColor = detectEntityColor(text, '太阳');
 
   if (text.includes('房子')) {
     commands.push(
-      objectCommand('rectangle', { name: '房子墙体', x: 340, y: 300, width: 220, height: 160, fill: '#fef3c7' }),
-      objectCommand('triangle', { name: '房子屋顶', x: 310, y: 200, width: 280, height: 130, fill: '#ef4444' }),
+      objectCommand('rectangle', { name: '房子墙体', x: 340, y: 300, width: 220, height: 160, fill: houseColor ?? '#fef3c7' }),
+      objectCommand('triangle', { name: '房子屋顶', x: 310, y: 200, width: 280, height: 130, fill: houseColor ?? '#ef4444' }),
       objectCommand('rectangle', { name: '房子门', x: 425, y: 370, width: 50, height: 90, fill: '#92400e' }),
       objectCommand('rectangle', { name: '房子窗户', x: 365, y: 335, width: 48, height: 42, fill: '#bfdbfe' })
     );
   }
 
   if (text.includes('太阳')) {
-    commands.push(objectCommand('circle', { name: '太阳', x: 710, y: 70, width: 100, height: 100, fill: '#facc15', stroke: '#f97316' }));
+    commands.push(objectCommand('circle', { name: '太阳', x: 710, y: 70, width: 100, height: 100, fill: sunColor ?? '#facc15', stroke: '#f97316' }));
   }
 
   if (text.includes('树')) {
@@ -109,6 +114,29 @@ const createComplexCommands = (rawText: string): DrawingCommand[] => {
   ];
 };
 
+const planSequenceCommands = (
+  intents: DrawingIntent[],
+  scene: SceneState
+): { commands: DrawingCommand[]; message?: string; needsClarification?: boolean } => {
+  const commands: DrawingCommand[] = [];
+  let draftScene = scene;
+
+  for (const intent of intents) {
+    const plan = planCommands(intent, draftScene);
+    if (plan.needsClarification) {
+      return {
+        commands: [],
+        message: plan.message ?? '复合指令中有一步需要更多信息，请拆开重说。',
+        needsClarification: true
+      };
+    }
+    commands.push(...plan.commands);
+    draftScene = applyCommands(draftScene, plan.commands);
+  }
+
+  return { commands };
+};
+
 const objectCommand = (
   shape: ShapeKind,
   options: Omit<Parameters<typeof createSceneObject>[1], 'id'>
@@ -119,6 +147,15 @@ const objectCommand = (
 
 const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector']) =>
   Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId));
+
+const detectEntityColor = (text: string, entity: string) => {
+  const entityIndex = text.indexOf(entity);
+  if (entityIndex < 0) return undefined;
+  const prefix = text.slice(0, entityIndex + entity.length);
+  const segments = prefix.split(/和|还有|同时|一起|加上|然后|接着|随后|并且|再/);
+  const segment = segments[segments.length - 1] ?? prefix;
+  return detectColor(segment);
+};
 
 const noTarget = () => ({
   commands: [],

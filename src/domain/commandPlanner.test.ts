@@ -1,7 +1,15 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { planCommands, resetCommandIdsForTest } from './commandPlanner';
+import { parseIntent } from './intentParser';
 import { applyCommand, createEmptyScene, createSceneObject } from './sceneModel';
-import type { DrawingIntent } from './types';
+import type { DrawingIntent, VoiceTranscript } from './types';
+
+const transcript = (text: string): VoiceTranscript => ({
+  text,
+  confidence: 0.95,
+  receivedAt: performance.now(),
+  isFinal: true
+});
 
 describe('planCommands', () => {
   beforeEach(() => resetCommandIdsForTest());
@@ -56,5 +64,21 @@ describe('planCommands', () => {
     const plan = planCommands(intent, createEmptyScene());
     expect(plan.needsClarification).toBe(true);
     expect(plan.commands).toHaveLength(0);
+  });
+
+  it('复合长句会按临时场景继续规划后续动作', () => {
+    const intent = parseIntent(transcript('画一个红色房子和蓝色太阳，再把房子放到最上层'));
+    const plan = planCommands(intent, createEmptyScene());
+    const fills = plan.commands.map((command) => command.object?.style.fill);
+
+    expect(plan.needsClarification).toBeUndefined();
+    expect(plan.commands).toHaveLength(6);
+    expect(fills).toContain('#ef4444');
+    expect(fills).toContain('#2563eb');
+    expect(plan.commands[plan.commands.length - 1]).toMatchObject({
+      type: 'reorder_object',
+      selector: { mode: 'by_name', name: '房子' },
+      layer: 'front'
+    });
   });
 });
