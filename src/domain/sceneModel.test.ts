@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, createEmptyScene, createSceneObject } from './sceneModel';
+import { applyCommand, applyCommandsAsTransaction, createEmptyScene, createSceneObject } from './sceneModel';
 
 describe('sceneModel', () => {
   it('支持创建、移动、撤销和重做', () => {
@@ -21,6 +21,23 @@ describe('sceneModel', () => {
     const scene = applyCommand(createEmptyScene(), { type: 'create_object', object: createSceneObject('rectangle', { id: 'shape-1' }) });
     const cleared = applyCommand(scene, { type: 'clear_canvas' });
     expect(cleared.objects).toHaveLength(0);
+  });
+
+  it('支持把多步命令作为一次历史事务撤销和重做', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      { type: 'create_object', object: createSceneObject('rectangle', { id: 'shape-1', name: '房子墙体' }) },
+      { type: 'create_object', object: createSceneObject('circle', { id: 'shape-2', name: '太阳' }) }
+    ]);
+
+    expect(scene.objects).toHaveLength(2);
+    expect(scene.past).toHaveLength(1);
+
+    const undone = applyCommand(scene, { type: 'undo' });
+    expect(undone.objects).toHaveLength(0);
+    expect(undone.future).toHaveLength(1);
+
+    const redone = applyCommand(undone, { type: 'redo' });
+    expect(redone.objects.map((object) => object.name)).toEqual(['房子墙体', '太阳']);
   });
 
   it('支持按对象名称选择图形', () => {

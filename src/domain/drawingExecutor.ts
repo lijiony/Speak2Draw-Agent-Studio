@@ -1,4 +1,4 @@
-import { applyCommands } from './sceneModel';
+import { applyCommandsAsTransaction } from './sceneModel';
 import { serializeSceneToSvg } from './svgExport';
 import type { DrawingCommand, ExecutionResult, SceneState, VoiceTranscript } from './types';
 
@@ -30,7 +30,7 @@ export const executeDrawingCommands = (
   }
 
   const hasExport = commands.some((command) => command.type === 'export_canvas');
-  const nextScene = applyCommands(scene, commands);
+  const nextScene = applyCommandsAsTransaction(scene, commands);
   const objectCount = nextScene.objects.length;
   const message = options?.message ?? buildMessage(commands, objectCount);
 

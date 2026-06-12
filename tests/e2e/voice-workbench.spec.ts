@@ -53,6 +53,24 @@ test('复合长句可以一次完成创建和图层调整', async ({ page }) => 
   expect(consoleErrors).toEqual([]);
 });
 
+test('撤销会回退整条复杂语音命令', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个房子和太阳');
+  await expect(systemFeedback(page)).toContainText('已拆解并执行 5 个绘图步骤。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(5);
+
+  await submitVoiceText(page, '撤销');
+  await expect(systemFeedback(page)).toContainText('已撤销上一步。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(0);
+
+  await submitVoiceText(page, '重做');
+  await expect(systemFeedback(page)).toContainText('已重做上一步。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(5);
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test('纯语音查询可以返回帮助和画布状态', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 

@@ -21,6 +21,15 @@ const withHistory = (scene: SceneState, next: SceneSnapshot): SceneState => ({
   future: []
 });
 
+const withoutHistory = (scene: SceneState, next: SceneSnapshot): SceneState => ({
+  ...next,
+  past: scene.past,
+  future: scene.future
+});
+
+const applySnapshot = (scene: SceneState, next: SceneSnapshot, recordHistory: boolean): SceneState =>
+  recordHistory ? withHistory(scene, next) : withoutHistory(scene, next);
+
 export const createSceneObject = (
   kind: ShapeKind,
   options: {
@@ -52,12 +61,14 @@ export const createSceneObject = (
   }
 });
 
-export const applyCommand = (scene: SceneState, command: DrawingCommand): SceneState => {
+export const applyCommand = (scene: SceneState, command: DrawingCommand): SceneState => applyCommandInternal(scene, command, true);
+
+const applyCommandInternal = (scene: SceneState, command: DrawingCommand, recordHistory: boolean): SceneState => {
   switch (command.type) {
     case 'create_object': {
       if (!command.object) return scene;
       const nextObjects = [...scene.objects, command.object];
-      return withHistory(scene, { objects: nextObjects, selectedId: command.object.id });
+      return applySnapshot(scene, { objects: nextObjects, selectedId: command.object.id }, recordHistory);
     }
     case 'select_object': {
       const selected = findObject(scene.objects, command.selector);
@@ -75,14 +86,14 @@ export const applyCommand = (scene: SceneState, command: DrawingCommand): SceneS
             }
           : object
       );
-      return withHistory(scene, { objects, selectedId: target.id });
+      return applySnapshot(scene, { objects, selectedId: target.id }, recordHistory);
     }
     case 'move_object': {
       const target = findObject(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
       if (!target) return scene;
       const moved = moveObject(target, command.direction);
       const objects = scene.objects.map((object) => (object.id === target.id ? moved : object));
-      return withHistory(scene, { objects, selectedId: target.id });
+      return applySnapshot(scene, { objects, selectedId: target.id }, recordHistory);
     }
     case 'resize_object': {
       const target = findObject(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
@@ -94,22 +105,22 @@ export const applyCommand = (scene: SceneState, command: DrawingCommand): SceneS
         height: clamp(target.height * scale, 20, CANVAS_HEIGHT - target.y)
       };
       const objects = scene.objects.map((object) => (object.id === target.id ? resized : object));
-      return withHistory(scene, { objects, selectedId: target.id });
+      return applySnapshot(scene, { objects, selectedId: target.id }, recordHistory);
     }
     case 'reorder_object': {
       const target = findObject(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
       if (!target) return scene;
       const objects = reorderObject(scene.objects, target.id, command.layer ?? 'front');
-      return objects === scene.objects ? scene : withHistory(scene, { objects, selectedId: target.id });
+      return objects === scene.objects ? scene : applySnapshot(scene, { objects, selectedId: target.id }, recordHistory);
     }
     case 'delete_object': {
       const target = findObject(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
       if (!target) return scene;
       const objects = scene.objects.filter((object) => object.id !== target.id);
-      return withHistory(scene, { objects, selectedId: null });
+      return applySnapshot(scene, { objects, selectedId: null }, recordHistory);
     }
     case 'clear_canvas':
-      return withHistory(scene, { objects: [], selectedId: null });
+      return applySnapshot(scene, { objects: [], selectedId: null }, recordHistory);
     case 'undo':
       return undo(scene);
     case 'redo':
@@ -123,6 +134,19 @@ export const applyCommand = (scene: SceneState, command: DrawingCommand): SceneS
 
 export const applyCommands = (scene: SceneState, commands: DrawingCommand[]): SceneState =>
   commands.reduce((nextScene, command) => applyCommand(nextScene, command), scene);
+
+export const applyCommandsAsTransaction = (scene: SceneState, commands: DrawingCommand[]): SceneState => {
+  if (commands.length <= 1) return applyCommands(scene, commands);
+
+  const nextScene = commands.reduce((nextScene, command) => applyCommandInternal(nextScene, command, false), scene);
+  if (!sceneSnapshotChanged(scene, nextScene)) return nextScene;
+
+  return {
+    ...snapshot(nextScene),
+    past: [...scene.past, snapshot(scene)],
+    future: []
+  };
+};
 
 export const findObject = (
   objects: SceneObject[],
@@ -162,6 +186,9 @@ const redo = (scene: SceneState): SceneState => {
     future: scene.future.slice(1)
   };
 };
+
+const sceneSnapshotChanged = (before: SceneState, after: SceneState) =>
+  before.selectedId !== after.selectedId || JSON.stringify(snapshot(before).objects) !== JSON.stringify(snapshot(after).objects);
 
 const moveObject = (object: SceneObject, direction: DrawingCommand['direction']): SceneObject => {
   const step = 48;

@@ -78,6 +78,26 @@ describe('voice drawing flow', () => {
     expect(result.scene.objects[result.scene.objects.length - 1]?.name).toContain('房子');
   });
 
+  it('撤销和重做会按整条复杂语音命令回退', () => {
+    resetCommandIdsForTest();
+    const createInput = transcript('画一个房子和太阳');
+    const createPlan = planCommands(parseIntent(createInput), createEmptyScene());
+    const created = executeDrawingCommands(createEmptyScene(), createPlan.commands, createInput, createPlan);
+
+    const undoInput = transcript('撤销');
+    const undoPlan = planCommands(parseIntent(undoInput), created.scene);
+    const undone = executeDrawingCommands(created.scene, undoPlan.commands, undoInput, undoPlan);
+
+    const redoInput = transcript('重做');
+    const redoPlan = planCommands(parseIntent(redoInput), undone.scene);
+    const redone = executeDrawingCommands(undone.scene, redoPlan.commands, redoInput, redoPlan);
+
+    expect(created.scene.objects).toHaveLength(5);
+    expect(undone.scene.objects).toHaveLength(0);
+    expect(redone.scene.objects).toHaveLength(5);
+    expect(redone.scene.objects.map((object) => object.name)).toContain('太阳');
+  });
+
   it('执行只读语音查询时不修改画布', () => {
     const scene = createEmptyScene();
     const input = transcript('我能说什么');
