@@ -109,6 +109,33 @@ test('可以通过语音给图形命名并按名称编辑', async ({ page }) => 
   expect(consoleErrors).toEqual([]);
 });
 
+test('可以给图形改名并复制图形', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个蓝色圆形叫月亮');
+  await submitVoiceText(page, '把月亮改名为星星');
+  await expect(systemFeedback(page)).toContainText('已重命名目标图形。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects[0]?.name)).toBe('星星');
+
+  await submitVoiceText(page, '复制星星');
+  await expect(systemFeedback(page)).toContainText('已复制目标图形。');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name))).toEqual(['星星', '星星副本']);
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test('可以直接修改文字内容', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '写文字你好');
+  await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
+  await submitVoiceText(page, '把文字改成世界');
+  await expect(systemFeedback(page)).toContainText('已更新文字内容。');
+  await expect(page.locator('svg text')).toContainText('世界');
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test('本地规则不确定时可以通过 AI 兜底解析自然语言', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
   const aiRequests: Array<{ transcript: string }> = [];

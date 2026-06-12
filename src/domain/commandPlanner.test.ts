@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { planCommands, resetCommandIdsForTest } from './commandPlanner';
 import { parseIntent } from './intentParser';
-import { applyCommand, createEmptyScene, createSceneObject } from './sceneModel';
+import { applyCommand, applyCommandsAsTransaction, createEmptyScene, createSceneObject } from './sceneModel';
 import type { DrawingIntent, VoiceTranscript } from './types';
 
 const transcript = (text: string): VoiceTranscript => ({
@@ -95,6 +95,42 @@ describe('planCommands', () => {
 
     const combo = planCommands(parseIntent(transcript('画一个蓝色圆形叫月亮和绿色矩形叫草地')), createEmptyScene());
     expect(combo.commands.map((command) => command.object?.name)).toEqual(['月亮', '草地']);
+  });
+
+  it('支持按名称改名、复制和文字编辑', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '月亮', groupId: 'asset-1', groupName: '夜空' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('triangle', { id: 'shape-3', name: '月牙', groupId: 'asset-1', groupName: '夜空' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('text', { id: 'shape-2', name: '标题', text: '你好' })
+      }
+    ]);
+
+    const renamePlan = planCommands(parseIntent(transcript('把月亮改名为星星')), scene);
+    expect(renamePlan.commands[0]).toMatchObject({
+      type: 'update_object',
+      updates: { groupName: '星星' }
+    });
+
+    const duplicatePlan = planCommands(parseIntent(transcript('复制月亮')), scene);
+    expect(duplicatePlan.commands).toHaveLength(3);
+    expect(duplicatePlan.commands[0].object?.name).toBe('月亮副本');
+    expect(duplicatePlan.commands[1].object?.name).toBe('月牙副本');
+    expect(duplicatePlan.commands[0].object?.groupName).toBe('夜空副本');
+    expect(duplicatePlan.commands[2]).toMatchObject({ type: 'select_object' });
+
+    const textPlan = planCommands(parseIntent(transcript('把标题文字改成新的标题')), scene);
+    expect(textPlan.commands[0]).toMatchObject({
+      type: 'update_object',
+      updates: { text: '新的标题' }
+    });
   });
 
   it('目标对象不存在时，按名称编辑会要求澄清', () => {

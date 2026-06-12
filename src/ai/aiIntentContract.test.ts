@@ -26,7 +26,12 @@ describe('aiIntentContract', () => {
     expect(payload.clarificationContext?.originalTranscript).toBe('把月亮改一下');
     expect(messages[0].content).toContain('clarificationContext');
     expect(messages[0].content).toContain(`"schemaVersion":"${AI_INTENT_SCHEMA_VERSION}"`);
+    expect(messages[0].content).toContain('rename_object');
+    expect(messages[0].content).toContain('duplicate_object');
+    expect(messages[0].content).toContain('update_text');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.create_shape).toContain('shape');
+    expect(AI_INTENT_JSON_SCHEMA.intentRequirements.rename_object).toContain('name');
+    expect(AI_INTENT_JSON_SCHEMA.intentRequirements.update_text).toContain('text');
     expect(JSON.stringify(messages)).not.toContain('DEEPSEEK_API_KEY');
   });
 
@@ -100,6 +105,40 @@ describe('aiIntentContract', () => {
     expect(normalizeAiIntent({ type: 'move_object', selector: { mode: 'selected' } }, '移动一下')).toBeNull();
     expect(normalizeAiIntent({ type: 'create_asset_recipe', recipe: [] }, '画一只猫')).toBeNull();
     expect(normalizeAiIntent({ type: 'clarify' }, '那个')).toBeNull();
+  });
+
+  it('接受改名、复制和文字编辑意图', () => {
+    expect(
+      normalizeAiIntent(
+        {
+          type: 'rename_object',
+          selector: { mode: 'by_name', name: '月亮' },
+          name: '星星'
+        },
+        '把月亮改名为星星'
+      )
+    ).toMatchObject({ type: 'rename_object', name: '星星' });
+
+    expect(
+      normalizeAiIntent(
+        {
+          type: 'duplicate_object',
+          selector: { mode: 'by_name', name: '月亮' }
+        },
+        '复制月亮'
+      )
+    ).toMatchObject({ type: 'duplicate_object' });
+
+    expect(
+      normalizeAiIntent(
+        {
+          type: 'update_text',
+          selector: { mode: 'selected' },
+          text: '新的标题'
+        },
+        '把文字改成新的标题'
+      )
+    ).toMatchObject({ type: 'update_text', text: '新的标题' });
   });
 
   it('拒绝 sequence 中混入无法执行或澄清意图', () => {

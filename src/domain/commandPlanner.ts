@@ -33,6 +33,64 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
         ? { commands }
         : { commands: [], message: 'AI 没有生成可安全执行的绘图配方，请换一种说法。', needsClarification: true };
     }
+    case 'rename_object': {
+      const target = findObject(scene.objects, intent.selector, scene.selectedId);
+      if (!target) return noTarget('当前没有可重命名的图形，请先画出一个对象。');
+      if (!intent.name) return { commands: [], message: '没有识别出新的名称，请再说一遍。', needsClarification: true };
+
+      const updates = target.groupId ? { groupName: intent.name } : { name: intent.name };
+      return {
+        commands: [{ type: 'update_object', selector: intent.selector, updates }],
+        message: target.groupId ? '已重命名素材组。' : '已重命名目标图形。'
+      };
+    }
+    case 'update_text': {
+      const target = findObject(scene.objects, intent.selector, scene.selectedId);
+      if (!target) return noTarget('当前没有可编辑文字的图形，请先画出一个文字对象。');
+      if (target.kind !== 'text') {
+        return {
+          commands: [],
+          message: '当前目标不是文字对象，请先说“写文字你好”创建文本。',
+          needsClarification: true
+        };
+      }
+      if (!intent.text) return { commands: [], message: '没有识别出新的文字内容，请再说一遍。', needsClarification: true };
+
+      return {
+        commands: [{ type: 'update_object', selector: intent.selector, updates: { text: intent.text } }],
+        message: '已更新文字内容。'
+      };
+    }
+    case 'duplicate_object': {
+      const target = findObject(scene.objects, intent.selector, scene.selectedId);
+      if (!target) return noTarget('当前没有可复制的图形，请先画出一个对象。');
+      const relatedObjects = target.groupId ? scene.objects.filter((object) => object.groupId === target.groupId) : [target];
+      const copyName = duplicateLabel(target.groupName ?? target.name);
+      const newGroupId = relatedObjects.length > 1 ? createGroupId() : undefined;
+      const commands = relatedObjects.map((object) =>
+        objectCommand(object.kind, {
+          name: duplicateLabel(object.name),
+          groupId: newGroupId,
+          groupName: copyName,
+          x: clamp(object.x + 32, 0, CANVAS_WIDTH - object.width),
+          y: clamp(object.y + 32, 0, CANVAS_HEIGHT - object.height),
+          width: object.width,
+          height: object.height,
+          fill: object.style.fill,
+          stroke: object.style.stroke,
+          strokeWidth: object.style.strokeWidth,
+          text: object.text
+        })
+      );
+      commands.push({ type: 'select_object', selector: { mode: 'by_name', name: copyName } });
+      return {
+        commands,
+        message:
+          relatedObjects.length > 1
+            ? `已复制并创建 ${relatedObjects.length} 个图形。`
+            : '已复制目标图形。'
+      };
+    }
     case 'select_object': {
       const target = findObject(scene.objects, intent.selector, scene.selectedId);
       return target
@@ -276,7 +334,7 @@ const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector'
   Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId));
 
 const HELP_MESSAGE =
-  '可以说：画一个红色圆形、画一个房子和太阳、选择太阳、把它改成黄色、向右移动一点、撤销、导出图片，或问我画布里有什么。';
+  '可以说：画一个红色圆形、画一个房子和太阳、选择太阳、把它改成黄色、把月亮改名为星星、复制星星、把文字改成世界、向右移动一点、撤销、导出图片，或问我画布里有什么。';
 
 const describeScene = (scene: SceneState) => {
   if (scene.objects.length === 0) return '画布目前是空的。可以先说“画一个红色圆形”。';
@@ -323,9 +381,9 @@ const detectEntityColor = (text: string, entity: string) => {
   return detectColor(segment);
 };
 
-const noTarget = () => ({
+const noTarget = (message = '当前没有可编辑的图形，请先说“画一个圆形”之类的指令。') => ({
   commands: [],
-  message: '当前没有可编辑的图形，请先说“画一个圆形”之类的指令。',
+  message,
   needsClarification: true
 });
 
@@ -342,3 +400,8 @@ const hasStyleUpdate = (updates: ReturnType<typeof compactStyleUpdate>) => Objec
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const createGroupId = () => `asset-${nextId++}`;
 const createId = () => `shape-${nextId++}`;
+const duplicateLabel = (value: string) => {
+  const trimmed = value.trim().slice(0, 20) || '副本';
+  if (/副本\d*$/.test(trimmed)) return `${trimmed}2`;
+  return `${trimmed}副本`;
+};
