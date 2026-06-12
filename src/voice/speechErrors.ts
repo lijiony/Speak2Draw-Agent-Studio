@@ -39,6 +39,14 @@ export const mapSpeechError = (error: unknown): SpeechErrorInfo => {
     };
   }
 
+  if (name === 'InvalidStateError') {
+    return {
+      title: '语音识别正在运行',
+      message: '浏览器认为语音识别器已经在启动或监听中，不能重复启动。',
+      action: '请不要连续点击麦克风按钮；如果页面卡住，请先停止监听或刷新页面。'
+    };
+  }
+
   if (name === 'unsupported') {
     return {
       title: '浏览器不支持语音识别',

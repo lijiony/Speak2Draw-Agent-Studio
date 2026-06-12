@@ -53,7 +53,7 @@ export const App = () => {
                 <MicOff size={22} />
               </button>
             ) : (
-              <button className="icon-button" onClick={start} disabled={status === 'unsupported'} title="启动语音监听" aria-label="启动语音监听">
+              <button className="icon-button" onClick={start} disabled={status === 'unsupported' || status === 'starting'} title="启动语音监听" aria-label="启动语音监听">
                 <Mic size={22} />
               </button>
             )}
@@ -190,6 +190,8 @@ const StatusBlock = ({ status, error }: { status: string; error: ReturnType<type
   const fallbackText =
     status === 'unsupported'
       ? '当前浏览器不支持 Web Speech API'
+      : status === 'starting'
+        ? '正在请求麦克风权限'
       : status === 'listening'
         ? '正在监听语音'
         : status === 'error'

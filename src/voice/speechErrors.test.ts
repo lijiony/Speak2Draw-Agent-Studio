@@ -22,4 +22,10 @@ describe('mapSpeechError', () => {
     const info = mapSpeechError('insecure-context');
     expect(info.action).toContain('127.0.0.1');
   });
+
+  it('识别重复启动语音识别的错误', () => {
+    const info = mapSpeechError({ name: 'InvalidStateError' });
+    expect(info.title).toContain('正在运行');
+    expect(info.action).toContain('不要连续点击');
+  });
 });
