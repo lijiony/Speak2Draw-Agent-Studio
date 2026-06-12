@@ -1,22 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VoiceTranscript } from '../domain/types';
+import { DEFAULT_ENDPOINT_POLICY } from './endpointPolicy';
 import { mapSpeechError, type SpeechErrorInfo } from './speechErrors';
+import { createBrowserSpeechRecognition } from './speechProvider';
+import { TranscriptAssembler, type TranscriptCandidate } from './transcriptAssembler';
 
 export type SpeechStatus = 'unsupported' | 'idle' | 'starting' | 'listening' | 'error';
-
-const SPEECH_END_GRACE_MS = 2800;
-const INTERIM_STABILITY_MS = 6000;
-const FINAL_RESULT_TIMEOUT_MS = 10000;
 
 export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => void) => {
   const [status, setStatus] = useState<SpeechStatus>('idle');
   const [error, setError] = useState<SpeechErrorInfo | null>(null);
   const [activity, setActivity] = useState('点击麦克风按钮后开始监听。');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const transcriptAssemblerRef = useRef(new TranscriptAssembler());
   const statusRef = useRef<SpeechStatus>('idle');
   const listeningRequestedRef = useRef(false);
-  const utteranceCommittedRef = useRef(false);
-  const lastInterimRef = useRef<{ text: string; confidence: number; receivedAt: number } | null>(null);
   const silenceTimerRef = useRef<number | null>(null);
   const interimCommitTimerRef = useRef<number | null>(null);
   const resultTimerRef = useRef<number | null>(null);
@@ -63,34 +61,28 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   const armSilenceTimer = () => {
     clearSilenceTimer();
     silenceTimerRef.current = window.setTimeout(() => {
-      if (statusRef.current === 'listening' && !utteranceCommittedRef.current) {
+      if (statusRef.current === 'listening' && !transcriptAssemblerRef.current.hasCommitted()) {
         setError(mapSpeechError('no-speech'));
         setActivity('还没有收到清晰语音，请检查输入设备或靠近麦克风。');
       }
-    }, 12000);
+    }, DEFAULT_ENDPOINT_POLICY.noSpeechTimeoutMs);
   };
 
-  const emitTranscript = (text: string, confidence: number, isFinal: boolean) => {
-    const cleanText = text.trim();
-    if (!cleanText || utteranceCommittedRef.current) return;
-    utteranceCommittedRef.current = true;
+  const emitTranscript = (candidate: TranscriptCandidate | null) => {
+    const transcript = transcriptAssemblerRef.current.commit(candidate, performance.now());
+    if (!transcript) return;
     clearRecognitionTimers();
     setError(null);
-    setActivity(isFinal ? `已识别：“${cleanText}”` : `根据中间识别执行：“${cleanText}”`);
-    onTranscript({
-      text: cleanText,
-      confidence: confidence || 0.85,
-      receivedAt: performance.now(),
-      isFinal
-    });
+    setActivity(transcript.isFinal ? `已识别：“${transcript.text}”` : `根据中间识别执行：“${transcript.text}”`);
+    onTranscript(transcript);
   };
 
   const armInterimCommitTimer = (delayMs: number) => {
     clearInterimCommitTimer();
     interimCommitTimerRef.current = window.setTimeout(() => {
-      const interim = lastInterimRef.current;
-      if (statusRef.current === 'listening' && interim && !utteranceCommittedRef.current) {
-        emitTranscript(interim.text, interim.confidence, false);
+      const interim = transcriptAssemblerRef.current.getFallbackCandidate();
+      if (statusRef.current === 'listening' && interim && !transcriptAssemblerRef.current.hasCommitted()) {
+        emitTranscript(interim);
         try {
           recognitionRef.current?.stop();
         } catch {
@@ -103,10 +95,10 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   const armResultTimer = () => {
     clearResultTimer();
     resultTimerRef.current = window.setTimeout(() => {
-      if (statusRef.current !== 'listening' || utteranceCommittedRef.current) return;
-      const interim = lastInterimRef.current;
+      if (statusRef.current !== 'listening' || transcriptAssemblerRef.current.hasCommitted()) return;
+      const interim = transcriptAssemblerRef.current.getFallbackCandidate();
       if (interim) {
-        emitTranscript(interim.text, interim.confidence, false);
+        emitTranscript(interim);
       } else {
         setError(mapSpeechError('no-transcript'));
         setActivity('检测到语音，但浏览器没有返回识别文字，正在重新监听。');
@@ -116,13 +108,12 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
       } catch {
         // Stop is best-effort; onend will decide whether to restart.
       }
-    }, FINAL_RESULT_TIMEOUT_MS);
+    }, DEFAULT_ENDPOINT_POLICY.finalResultTimeoutMs);
   };
 
   const startRecognition = () => {
     try {
-      utteranceCommittedRef.current = false;
-      lastInterimRef.current = null;
+      transcriptAssemblerRef.current.reset();
       setSpeechStatus('starting');
       recognitionRef.current?.start();
     } catch (startError) {
@@ -139,18 +130,14 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   };
 
   useEffect(() => {
-    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!Recognition) {
+    const recognition = createBrowserSpeechRecognition();
+    if (!recognition) {
       setSpeechStatus('unsupported');
       setError(mapSpeechError('unsupported'));
       setActivity('当前浏览器不支持语音识别。');
       return;
     }
 
-    const recognition = new Recognition();
-    recognition.lang = 'zh-CN';
-    recognition.continuous = false;
-    recognition.interimResults = true;
     recognition.onstart = () => {
       setSpeechStatus('listening');
       setActivity('语音识别已启动，请说出绘图指令。');
@@ -173,7 +160,9 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     };
     recognition.onspeechend = () => {
       setActivity('检测到停顿，正在等你是否还有补充。');
-      if (lastInterimRef.current) armInterimCommitTimer(SPEECH_END_GRACE_MS);
+      if (transcriptAssemblerRef.current.getFallbackCandidate()) {
+        armInterimCommitTimer(DEFAULT_ENDPOINT_POLICY.speechEndGraceMs);
+      }
       armResultTimer();
     };
     recognition.onnomatch = () => {
@@ -186,16 +175,12 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
         const result = event.results[index];
         const alternative = result[0];
         if (!result.isFinal) {
-          lastInterimRef.current = {
-            text: alternative.transcript,
-            confidence: alternative.confidence || 0.85,
-            receivedAt: performance.now()
-          };
+          transcriptAssemblerRef.current.recordInterim(alternative.transcript, alternative.confidence, performance.now());
           setActivity(`正在识别：“${alternative.transcript.trim()}”（继续说，我会等你停顿后执行）`);
-          armInterimCommitTimer(INTERIM_STABILITY_MS);
+          armInterimCommitTimer(DEFAULT_ENDPOINT_POLICY.interimStabilityMs);
           continue;
         }
-        emitTranscript(alternative.transcript, alternative.confidence || 0.9, true);
+        emitTranscript(transcriptAssemblerRef.current.createFinal(alternative.transcript, alternative.confidence, performance.now()));
       }
     };
     recognition.onerror = (event) => {
@@ -216,7 +201,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
         clearRestartTimer();
         restartTimerRef.current = window.setTimeout(() => {
           if (listeningRequestedRef.current) startRecognition();
-        }, 300);
+        }, DEFAULT_ENDPOINT_POLICY.restartDelayMs);
       } else if (statusRef.current === 'listening' || statusRef.current === 'starting') {
         setSpeechStatus('idle');
         setActivity('监听已结束。');
