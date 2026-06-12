@@ -4,6 +4,10 @@ import { mapSpeechError, type SpeechErrorInfo } from './speechErrors';
 
 export type SpeechStatus = 'unsupported' | 'idle' | 'starting' | 'listening' | 'error';
 
+const SPEECH_END_GRACE_MS = 2800;
+const INTERIM_STABILITY_MS = 6000;
+const FINAL_RESULT_TIMEOUT_MS = 10000;
+
 export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => void) => {
   const [status, setStatus] = useState<SpeechStatus>('idle');
   const [error, setError] = useState<SpeechErrorInfo | null>(null);
@@ -81,7 +85,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     });
   };
 
-  const armInterimCommitTimer = () => {
+  const armInterimCommitTimer = (delayMs: number) => {
     clearInterimCommitTimer();
     interimCommitTimerRef.current = window.setTimeout(() => {
       const interim = lastInterimRef.current;
@@ -93,7 +97,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
           // The recognizer may have already ended after producing the interim text.
         }
       }
-    }, 1800);
+    }, delayMs);
   };
 
   const armResultTimer = () => {
@@ -112,7 +116,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
       } catch {
         // Stop is best-effort; onend will decide whether to restart.
       }
-    }, 8000);
+    }, FINAL_RESULT_TIMEOUT_MS);
   };
 
   const startRecognition = () => {
@@ -158,15 +162,18 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     };
     recognition.onsoundstart = () => {
       setActivity('检测到声音，正在判断是否是语音。');
+      clearInterimCommitTimer();
       armSilenceTimer();
     };
     recognition.onspeechstart = () => {
       setActivity('检测到语音，正在识别文字。');
       clearSilenceTimer();
+      clearInterimCommitTimer();
       armResultTimer();
     };
     recognition.onspeechend = () => {
-      setActivity('语音已结束，正在等待识别结果。');
+      setActivity('检测到停顿，正在等你是否还有补充。');
+      if (lastInterimRef.current) armInterimCommitTimer(SPEECH_END_GRACE_MS);
       armResultTimer();
     };
     recognition.onnomatch = () => {
@@ -184,8 +191,8 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
             confidence: alternative.confidence || 0.85,
             receivedAt: performance.now()
           };
-          setActivity(`正在识别：“${alternative.transcript.trim()}”`);
-          armInterimCommitTimer();
+          setActivity(`正在识别：“${alternative.transcript.trim()}”（继续说，我会等你停顿后执行）`);
+          armInterimCommitTimer(INTERIM_STABILITY_MS);
           continue;
         }
         emitTranscript(alternative.transcript, alternative.confidence || 0.9, true);

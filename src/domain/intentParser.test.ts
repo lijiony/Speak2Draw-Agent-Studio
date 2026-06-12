@@ -31,4 +31,19 @@ describe('parseIntent', () => {
     const intent = parseIntent(transcript('画一个房子和太阳'));
     expect(intent.type).toBe('create_complex_scene');
   });
+
+  it('选择房子不会触发复杂场景创建', () => {
+    const intent = parseIntent(transcript('选择房子'));
+    expect(intent.type).toBe('select_object');
+    expect(intent.selector?.mode).toBe('by_name');
+    expect(intent.selector?.name).toBe('房子');
+  });
+
+  it('选择红色圆形时使用形状和颜色选择器', () => {
+    const intent = parseIntent(transcript('选择红色圆形'));
+    expect(intent.type).toBe('select_object');
+    expect(intent.selector?.mode).toBe('by_shape_color');
+    expect(intent.selector?.shape).toBe('circle');
+    expect(intent.selector?.color).toBe('#ef4444');
+  });
 });

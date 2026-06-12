@@ -84,9 +84,10 @@ export interface DrawingIntent {
 }
 
 export interface ObjectSelector {
-  mode: 'last' | 'selected' | 'by_shape_color';
+  mode: 'last' | 'selected' | 'by_shape_color' | 'by_name';
   shape?: ShapeKind;
   color?: string;
+  name?: string;
 }
 
 export interface DrawingCommand {

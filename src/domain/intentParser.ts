@@ -51,14 +51,20 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
   if (/(导出|保存图片|下载图片)/.test(text)) return { type: 'export_canvas', rawText };
   if (/(删除|删掉|移除)/.test(text)) return { type: 'delete_object', rawText, selector: { mode: 'selected' } };
 
-  const complex = detectComplexScene(text, rawText);
-  if (complex) return complex;
-
   if (/(选择|选中)/.test(text)) {
+    const shape = detectShape(text);
+    const color = detectColor(text);
+    const name = detectObjectName(text);
     return {
       type: 'select_object',
       rawText,
-      selector: text.includes('最后') || text.includes('刚才') ? { mode: 'last' } : { mode: 'by_shape_color', shape: detectShape(text), color: detectColor(text) }
+      selector: text.includes('最后') || text.includes('刚才')
+        ? { mode: 'last' }
+        : shape || color
+          ? { mode: 'by_shape_color', shape, color }
+          : name
+            ? { mode: 'by_name', name }
+            : { mode: 'selected' }
     };
   }
 
@@ -82,6 +88,9 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
       selector: { mode: 'selected' }
     };
   }
+
+  const complex = detectComplexScene(text, rawText);
+  if (complex) return complex;
 
   if (/(画|添加|创建|写)/.test(text)) {
     const shape = detectShape(text) ?? (text.includes('写') ? 'text' : undefined);
@@ -107,6 +116,14 @@ export const detectColor = (text: string) => {
 };
 
 export const detectShape = (text: string) => SHAPES.find(([label]) => text.includes(label))?.[1];
+
+const detectObjectName = (text: string) => {
+  if (text.includes('房子')) return '房子';
+  if (text.includes('太阳')) return '太阳';
+  if (text.includes('树')) return '树';
+  if (text.includes('机器人')) return '机器人';
+  return undefined;
+};
 
 const detectComplexScene = (text: string, rawText: string): DrawingIntent | null => {
   if (/(房子|太阳|树|机器人)/.test(text)) return { type: 'create_complex_scene', rawText };

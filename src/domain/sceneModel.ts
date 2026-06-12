@@ -126,6 +126,10 @@ export const findObject = (
   if (!selector) return selectedId ? objects.find((object) => object.id === selectedId) : lastItem(objects);
   if (selector.mode === 'selected') return selectedId ? objects.find((object) => object.id === selectedId) : lastItem(objects);
   if (selector.mode === 'last') return lastItem(objects);
+  if (selector.mode === 'by_name') {
+    const name = selector.name ?? '';
+    return [...objects].reverse().find((object) => object.name.includes(name) || object.text?.includes(name));
+  }
   return [...objects].reverse().find((object) => {
     const shapeMatches = !selector.shape || object.kind === selector.shape;
     const colorMatches = !selector.color || object.style.fill === selector.color || object.style.stroke === selector.color;

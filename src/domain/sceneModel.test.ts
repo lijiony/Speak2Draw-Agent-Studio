@@ -22,4 +22,13 @@ describe('sceneModel', () => {
     const cleared = applyCommand(scene, { type: 'clear_canvas' });
     expect(cleared.objects).toHaveLength(0);
   });
+
+  it('支持按对象名称选择图形', () => {
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('rectangle', { id: 'shape-1', name: '房子墙体' })
+    });
+    const selected = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '房子' } });
+    expect(selected.selectedId).toBe('shape-1');
+  });
 });
