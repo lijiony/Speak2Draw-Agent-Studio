@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { planCommands, resetCommandIdsForTest } from './commandPlanner';
 import { executeDrawingCommands } from './drawingExecutor';
 import { parseIntent } from './intentParser';
-import { createEmptyScene } from './sceneModel';
+import { applyCommandsAsTransaction, createEmptyScene, createSceneObject } from './sceneModel';
 import type { VoiceTranscript } from './types';
 
 const transcript = (text: string): VoiceTranscript => ({
@@ -92,6 +92,56 @@ describe('voice drawing flow', () => {
     expect(moved.ok).toBe(true);
     expect(moved.scene.objects[0].name).toBe('月亮');
     expect(moved.scene.objects[0].x).toBeGreaterThan(created.scene.objects[0].x);
+  });
+
+  it('支持复制整组素材并保留新的组名', () => {
+    resetCommandIdsForTest();
+    const createdScene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '猫脸', groupId: 'asset-1', groupName: '猫', x: 320, y: 210 })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('triangle', { id: 'shape-2', name: '猫左耳', groupId: 'asset-1', groupName: '猫', x: 310, y: 170 })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('triangle', { id: 'shape-3', name: '猫右耳', groupId: 'asset-1', groupName: '猫', x: 420, y: 170 })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-4', name: '猫帽子', groupId: 'asset-1', groupName: '猫', x: 350, y: 180 })
+      }
+    ]);
+
+    const copyInput = transcript('复制猫');
+    const copyPlan = planCommands(parseIntent(copyInput), createdScene);
+    const duplicated = executeDrawingCommands(createdScene, copyPlan.commands, copyInput, copyPlan);
+
+    expect(duplicated.ok).toBe(true);
+    expect(duplicated.scene.objects).toHaveLength(8);
+    expect(duplicated.scene.objects.filter((object) => object.groupName === '猫副本')).toHaveLength(4);
+    expect(duplicated.message).toContain('已复制并创建 4 个图形。');
+  });
+
+  it('支持把文字对象改成新的内容', () => {
+    resetCommandIdsForTest();
+    const createInput = transcript('写文字你好');
+    const created = executeDrawingCommands(
+      createEmptyScene(),
+      planCommands(parseIntent(createInput), createEmptyScene()).commands,
+      createInput
+    );
+
+    const updateInput = transcript('把文字改成世界');
+    const updatePlan = planCommands(parseIntent(updateInput), created.scene);
+    const updated = executeDrawingCommands(created.scene, updatePlan.commands, updateInput, updatePlan);
+
+    expect(updated.ok).toBe(true);
+    expect(updated.scene.objects[0].kind).toBe('text');
+    expect(updated.scene.objects[0].text).toBe('世界');
+    expect(updated.message).toBe('已更新文字内容。');
   });
 
   it('按对象名称调整图层顺序', () => {

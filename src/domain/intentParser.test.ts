@@ -70,6 +70,21 @@ describe('parseIntent', () => {
     expect(shortMoved.direction).toBe('right');
   });
 
+  it('支持按名称改名、复制和文字编辑', () => {
+    const renamed = parseIntent(transcript('把月亮改名为星星'));
+    expect(renamed.type).toBe('rename_object');
+    expect(renamed.selector).toMatchObject({ mode: 'by_name', name: '月亮' });
+    expect(renamed.name).toBe('星星');
+
+    const duplicated = parseIntent(transcript('复制月亮'));
+    expect(duplicated.type).toBe('duplicate_object');
+    expect(duplicated.selector).toMatchObject({ mode: 'by_name', name: '月亮' });
+
+    const textUpdated = parseIntent(transcript('把文字改成你好世界'));
+    expect(textUpdated.type).toBe('update_text');
+    expect(textUpdated.text).toBe('你好世界');
+  });
+
   it('选择红色圆形时使用形状和颜色选择器', () => {
     const intent = parseIntent(transcript('选择红色圆形'));
     expect(intent.type).toBe('select_object');

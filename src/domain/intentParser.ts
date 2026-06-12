@@ -103,7 +103,20 @@ const parseNormalizedIntent = (rawText: string, text: string, allowSequence: boo
     return { type: 'move_object', rawText, selector: detectTargetSelector(text, true), direction };
   }
 
-  if (/(改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点)/.test(text)) {
+  const rename = detectRenameIntent(text, rawText);
+  if (rename) return rename;
+
+  const textUpdate = detectTextUpdateIntent(text, rawText);
+  if (textUpdate) return textUpdate;
+
+  const duplicate = detectDuplicateIntent(text, rawText);
+  if (duplicate) return duplicate;
+
+  if (/(改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点)/.test(text) && !(detectColor(text) || /(描边|线条加粗|加粗|细一点)/.test(text))) {
+    return clarify(rawText, '没有识别出要修改的颜色或样式，请说“把它改成黄色”或“线条加粗”。');
+  }
+
+  if ((detectColor(text) || /(描边|线条加粗|加粗|细一点)/.test(text)) && /(改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点)/.test(text)) {
     const color = detectColor(text);
     const strokeWidth = text.includes('加粗') ? 8 : text.includes('细一点') ? 2 : undefined;
     return {
@@ -243,8 +256,8 @@ const extractCustomName = (text: string) => {
 };
 
 const extractTargetName = (text: string) => {
-  const byPrefix = text.match(/(?:选择|选中|选一下|找到|定位到|删除|删掉|移除|去掉|擦掉|放大|缩小)([^，。,.、\s]+)/);
-  const byObjectMarker = text.match(/(?:把|将)(.+?)(?:改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点|移动|挪|放到|移到|左移|右移|上移|下移|放大|变大|缩小|变小|置顶|顶层|最上层|最前面|置底|底层|最下层|最后面|前移|后移|删除|删掉|移除|去掉|擦掉)/);
+  const byPrefix = text.match(/(?:选择|选中|选一下|找到|定位到|删除|删掉|移除|去掉|擦掉|放大|缩小|复制|再复制|再来一个|拷贝|克隆)([^，。,.、\s]+)/);
+  const byObjectMarker = text.match(/(?:把|将)(.+?)(?:改名|重命名|名字改成|名称改成|名字叫|名称叫|命名为|命名成|叫做|叫成|文字改成|文本改成|内容改成|改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点|复制|再复制|再来一个|拷贝|克隆|移动|挪|放到|移到|左移|右移|上移|下移|放大|变大|缩小|变小|置顶|顶层|最上层|最前面|置底|底层|最下层|最后面|前移|后移|删除|删掉|移除|去掉|擦掉)/);
   return sanitizeName(byPrefix?.[1] ?? byObjectMarker?.[1]);
 };
 
@@ -259,6 +272,50 @@ const sanitizeName = (name?: string) => {
 };
 
 const isPronoun = (value: string) => ['它', '他', '她', '这个', '那个', '选中', '最后', '刚才'].includes(value);
+
+const detectRenameIntent = (text: string, rawText: string): DrawingIntent | null => {
+  if (!/(改名|重命名|名字改成|名称改成|命名为|命名成|叫做|叫成)/.test(text)) return null;
+  const name = extractRenamedName(text);
+  if (!name) return clarify(rawText, '听到了改名指令，但没有识别出新的名称。');
+  return {
+    type: 'rename_object',
+    rawText,
+    selector: detectTargetSelector(text, true),
+    name
+  };
+};
+
+const detectTextUpdateIntent = (text: string, rawText: string): DrawingIntent | null => {
+  if (!/(文字|文本|内容)/.test(text) || !/(改成|换成|变成|改为|换为)/.test(text)) return null;
+  const updatedText = extractUpdatedText(text);
+  if (!updatedText) return clarify(rawText, '听到了文字编辑指令，但没有识别出新的文字内容。');
+  return {
+    type: 'update_text',
+    rawText,
+    selector: detectTargetSelector(text, false),
+    text: updatedText
+  };
+};
+
+const detectDuplicateIntent = (text: string, rawText: string): DrawingIntent | null => {
+  if (!/(复制|再复制|再来一个|拷贝|克隆|复制一份|复制一个)/.test(text)) return null;
+  return {
+    type: 'duplicate_object',
+    rawText,
+    selector: detectTargetSelector(text, true)
+  };
+};
+
+const extractRenamedName = (text: string) => {
+  const match = text.match(/(?:改名为|重命名为|改名成|重命名成|名字改成|名称改成|命名为|命名成|叫做|叫成)([^，。,.、\s]+)/);
+  return sanitizeName(match?.[1]);
+};
+
+const extractUpdatedText = (text: string) => {
+  const match = text.match(/(?:把|将)?(.*?)(?:的)?(?:文字|文本|内容)(?:改成|换成|变成|改为|换为)(.+)$/);
+  const value = match?.[2]?.trim();
+  return value || undefined;
+};
 
 const clarify = (rawText: string, reason: string): DrawingIntent => ({
   type: 'clarify',
