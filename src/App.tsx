@@ -186,21 +186,22 @@ const SceneObjectView = ({ object, selected }: { object: SceneObject; selected: 
   );
 };
 
-const StatusBlock = ({ status, error }: { status: string; error: string }) => {
-  const text =
+const StatusBlock = ({ status, error }: { status: string; error: ReturnType<typeof useSpeechInput>['error'] }) => {
+  const fallbackText =
     status === 'unsupported'
       ? '当前浏览器不支持 Web Speech API'
       : status === 'listening'
         ? '正在监听语音'
         : status === 'error'
-          ? error || '语音识别出现错误'
+          ? '语音识别出现错误'
           : '尚未开始监听';
   return (
     <section className={`status-block ${status}`}>
       <div className="status-icon">{status === 'listening' ? <Mic size={20} /> : <RotateCcw size={20} />}</div>
       <div>
-        <h2>语音状态</h2>
-        <p>{text}</p>
+        <h2>{error?.title ?? '语音状态'}</h2>
+        <p>{error?.message ?? fallbackText}</p>
+        {error?.action ? <p className="status-action">{error.action}</p> : null}
       </div>
     </section>
   );

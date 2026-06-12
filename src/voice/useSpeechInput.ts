@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VoiceTranscript } from '../domain/types';
+import { mapSpeechError, type SpeechErrorInfo } from './speechErrors';
 
 export type SpeechStatus = 'unsupported' | 'idle' | 'listening' | 'error';
 
 export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => void) => {
   const [status, setStatus] = useState<SpeechStatus>('idle');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<SpeechErrorInfo | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
     const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!Recognition) {
       setStatus('unsupported');
+      setError(mapSpeechError('unsupported'));
       return;
     }
 
@@ -33,7 +35,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
       }
     };
     recognition.onerror = (event) => {
-      setError(event.error);
+      setError(mapSpeechError(event));
       setStatus('error');
     };
     recognition.onend = () => {
@@ -44,14 +46,28 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     return () => recognition.stop();
   }, [onTranscript]);
 
-  const start = () => {
-    try {
-      recognitionRef.current?.start();
-      setError('');
-      setStatus('listening');
-    } catch {
+  const start = async () => {
+    if (!window.isSecureContext && !isLocalhost()) {
       setStatus('error');
-      setError('语音识别启动失败，请检查浏览器权限。');
+      setError(mapSpeechError('insecure-context'));
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus('error');
+      setError(mapSpeechError('unsupported'));
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      recognitionRef.current?.start();
+      setError(null);
+      setStatus('listening');
+    } catch (startError) {
+      setStatus('error');
+      setError(mapSpeechError(startError));
     }
   };
 
@@ -62,3 +78,5 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
 
   return { status, error, start, stop };
 };
+
+const isLocalhost = () => ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
