@@ -94,10 +94,16 @@ const createCommand = (shape: ShapeKind, intent: DrawingIntent): DrawingCommand 
   })
 });
 
-const createAssetRecipeCommands = (intent: DrawingIntent): DrawingCommand[] =>
-  (intent.recipe ?? []).slice(0, 16).map((item) =>
+const createAssetRecipeCommands = (intent: DrawingIntent): DrawingCommand[] => {
+  const recipe = (intent.recipe ?? []).slice(0, 16);
+  const groupName = intent.name ?? inferAssetGroupName(intent.rawText, recipe);
+  const groupId = groupName ? createGroupId() : undefined;
+
+  return recipe.map((item, index) =>
     objectCommand(item.shape, {
-      name: item.name,
+      name: item.name ?? (groupName ? `${groupName}部件${index + 1}` : undefined),
+      groupId,
+      groupName,
       x: item.position?.x,
       y: item.position?.y,
       width: item.width,
@@ -108,6 +114,7 @@ const createAssetRecipeCommands = (intent: DrawingIntent): DrawingCommand[] =>
       text: item.text
     })
   );
+};
 
 const createComplexCommands = (rawText: string): DrawingCommand[] => {
   const text = normalizeVoiceText(rawText);
@@ -243,6 +250,28 @@ const detectCustomName = (text: string) => {
   return name || undefined;
 };
 
+const inferAssetGroupName = (rawText: string, recipe: Array<{ name?: string }>) => {
+  const textName = normalizeVoiceText(rawText)
+    .replace(/^(画|添加|创建|绘制|生成|来一个|做一个)+/, '')
+    .replace(/^(一个|一只|一条|一辆|一朵|一棵|一座|张|只|个|条|辆|朵|棵|座)+/, '')
+    .replace(/[，。,.、\s]/g, '')
+    .slice(0, 24);
+  if (textName) return textName;
+
+  const names = recipe.map((item) => item.name).filter((name): name is string => Boolean(name));
+  const prefix = commonPrefix(names).slice(0, 12);
+  return prefix.length >= 1 ? prefix : undefined;
+};
+
+const commonPrefix = (items: string[]) => {
+  if (items.length === 0) return '';
+  let prefix = items[0];
+  for (const item of items.slice(1)) {
+    while (prefix && !item.startsWith(prefix)) prefix = prefix.slice(0, -1);
+  }
+  return prefix;
+};
+
 const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector']) =>
   Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId));
 
@@ -311,4 +340,5 @@ const compactStyleUpdate = (updates: { style: { fill?: string; stroke?: string; 
 const hasStyleUpdate = (updates: ReturnType<typeof compactStyleUpdate>) => Object.keys(updates.style).length > 0;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const createGroupId = () => `asset-${nextId++}`;
 const createId = () => `shape-${nextId++}`;

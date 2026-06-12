@@ -249,9 +249,11 @@ const DrawingCanvas = ({ scene }: { scene: SceneState }) => (
     </defs>
     <rect width="960" height="600" fill="#ffffff" />
     <rect width="960" height="600" fill="url(#grid)" />
-    {scene.objects.map((object) => (
-      <SceneObjectView key={object.id} object={object} selected={object.id === scene.selectedId} />
-    ))}
+    {scene.objects.map((object) => {
+      const selectedObject = scene.objects.find((item) => item.id === scene.selectedId);
+      const selected = object.id === scene.selectedId || Boolean(selectedObject?.groupId && selectedObject.groupId === object.groupId);
+      return <SceneObjectView key={object.id} object={object} selected={selected} />;
+    })}
   </svg>
 );
 

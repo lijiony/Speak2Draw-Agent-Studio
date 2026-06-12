@@ -5,6 +5,7 @@ export interface AiIntentRequestPayload {
   scene: {
     objects: Array<{
       name: string;
+      groupName?: string;
       kind: ShapeKind;
       fill: string;
     }>;
@@ -77,6 +78,7 @@ export const AI_INTENT_JSON_SCHEMA = {
       shape: SHAPES,
       direction: DIRECTIONS,
       layer: LAYERS,
+      name: 'string for object or asset group name',
       color: '#RRGGBB',
       selector: {
         mode: ['selected', 'last', 'by_name', 'by_shape_color'],
@@ -103,7 +105,7 @@ export const AI_INTENT_JSON_SCHEMA = {
   },
   intentRequirements: {
     create_shape: ['shape'],
-    create_asset_recipe: ['recipe with at least one safe item'],
+    create_asset_recipe: ['name is recommended', 'recipe with at least one safe item'],
     update_style: ['color or strokeColor or strokeWidth'],
     move_object: ['direction'],
     resize_object: ['scale'],
@@ -124,6 +126,7 @@ export const toAiIntentRequestPayload = (
   scene: {
     objects: scene.objects.map((object) => ({
       name: object.name,
+      ...(object.groupName ? { groupName: object.groupName } : {}),
       kind: object.kind,
       fill: object.style.fill
     })),
@@ -141,7 +144,7 @@ export const buildDeepSeekMessages = (payload: AiIntentRequestPayload) => [
       `把用户语音转换成一个 DrawingIntent。允许的 type：${INTENT_TYPES.join(', ')}。` +
       '如果请求包含 clarificationContext，说明上一轮语音没有执行成功；请把 originalTranscript、question 和本轮 transcript 合并理解，优先输出可执行意图。' +
       'shape 只能是 circle, rectangle, ellipse, line, triangle, text。direction 只能是 left, right, up, down, center, top-left, top-right, bottom-left, bottom-right。' +
-      '当用户要画猫、船、云、人物等内置图形没有的元素时，优先返回 create_asset_recipe，并用 recipe 数组拆成多个安全矢量对象。recipe 每项只允许 shape, name, color, strokeColor, strokeWidth, position, width, height, text。' +
+      '当用户要画猫、船、云、人物等内置图形没有的元素时，优先返回 create_asset_recipe，并在 intent.name 写入整个素材名称，例如“猫”或“戴帽子的猫”，再用 recipe 数组拆成多个安全矢量对象。recipe 每项只允许 shape, name, color, strokeColor, strokeWidth, position, width, height, text。系统会把这些部件按 intent.name 成组，后续用户可以按名称选择、移动、改色或删除整组素材。' +
       '颜色使用十六进制，例如红色 #ef4444、蓝色 #2563eb、绿色 #16a34a、黄色 #facc15、黑色 #111827、紫色 #7c3aed、粉色 #ec4899。' +
       '如果用户提到已有对象名称，使用 selector: { "mode": "by_name", "name": "对象名" }。如果包含多个动作，可以返回 {"type":"sequence","intents":[...]}。如果无法安全执行，返回 {"type":"unknown","reason":"..."}。'
   },

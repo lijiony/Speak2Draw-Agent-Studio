@@ -4,7 +4,7 @@ declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => Promise<void>;
-      getScene: () => { objects: Array<{ name: string; kind: string; x: number; style: { fill: string } }> };
+      getScene: () => { objects: Array<{ name: string; groupName?: string; kind: string; x: number; style: { fill: string } }> };
       getAiStatus: () => { state: string; message: string };
       getClarification: () => { originalTranscript: string; question: string } | null;
     };
@@ -201,6 +201,7 @@ test('用户可以用下一句语音补充 AI 澄清问题', async ({ page }) =>
         model: 'deepseek-v4-flash',
         intent: {
           type: 'create_asset_recipe',
+          name: '猫',
           recipe: [
             { shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 370, y: 230 }, width: 160, height: 140 },
             { shape: 'rectangle', name: '红色帽子', color: '#ef4444', position: { x: 405, y: 185 }, width: 100, height: 36 }
@@ -245,6 +246,7 @@ test('AI 可以把缺失元素生成安全矢量配方', async ({ page }) => {
         model: 'deepseek-v4-flash',
         intent: {
           type: 'create_asset_recipe',
+          name: '猫',
           recipe: [
             { shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 370, y: 230 }, width: 160, height: 140 },
             { shape: 'triangle', name: '猫左耳', color: '#f9fafb', position: { x: 375, y: 190 }, width: 60, height: 70 },
@@ -261,8 +263,15 @@ test('AI 可以把缺失元素生成安全矢量配方', async ({ page }) => {
 
   const objectNames = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? []);
   expect(objectNames).toEqual(['猫脸', '猫左耳', '猫右耳', '红色帽子']);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.groupName) ?? [])).toEqual(['猫', '猫', '猫', '猫']);
   await expect(page.locator('svg circle[fill="#f9fafb"]')).toHaveCount(1);
   await expect(page.locator('svg rect[fill="#ef4444"]')).toHaveCount(1);
+
+  const beforeMove = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.x) ?? []);
+  await submitVoiceText(page, '把猫向右移动一点');
+  await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 4 个图形。');
+  const afterMove = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.x) ?? []);
+  expect(afterMove.every((x, index) => x > (beforeMove[index] ?? x))).toBe(true);
   expect(consoleErrors).toEqual([]);
 });
 

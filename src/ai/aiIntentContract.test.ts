@@ -13,7 +13,7 @@ describe('aiIntentContract', () => {
   it('构建发送给 DeepSeek 的场景摘要，不包含密钥', () => {
     const scene = applyCommand(createEmptyScene(), {
       type: 'create_object',
-      object: createSceneObject('circle', { id: 'shape-1', name: '月亮', fill: '#2563eb' })
+      object: createSceneObject('circle', { id: 'shape-1', name: '月亮', groupId: 'asset-1', groupName: '夜空', fill: '#2563eb' })
     });
     const payload = toAiIntentRequestPayload('让月亮更梦幻', scene, '本地规则无法理解', {
       originalTranscript: '把月亮改一下',
@@ -21,7 +21,7 @@ describe('aiIntentContract', () => {
     });
     const messages = buildDeepSeekMessages(payload);
 
-    expect(payload.scene.objects).toEqual([{ name: '月亮', kind: 'circle', fill: '#2563eb' }]);
+    expect(payload.scene.objects).toEqual([{ name: '月亮', groupName: '夜空', kind: 'circle', fill: '#2563eb' }]);
     expect(payload.scene.selectedName).toBe('月亮');
     expect(payload.clarificationContext?.originalTranscript).toBe('把月亮改一下');
     expect(messages[0].content).toContain('clarificationContext');
@@ -52,11 +52,12 @@ describe('aiIntentContract', () => {
 
   it('解析并清洗 AI 返回的安全素材配方', () => {
     const intent = parseDeepSeekIntentContent(
-      '```json\n{"type":"create_asset_recipe","recipe":[{"shape":"circle","name":"猫脸","color":"#f9fafb","position":{"x":1200,"y":-20},"width":999,"height":10},{"shape":"path","name":"非法路径","color":"red"}]}\n```',
+      '```json\n{"type":"create_asset_recipe","name":"猫","recipe":[{"shape":"circle","name":"猫脸","color":"#f9fafb","position":{"x":1200,"y":-20},"width":999,"height":10},{"shape":"path","name":"非法路径","color":"red"}]}\n```',
       '画一只猫'
     );
 
     expect(intent?.type).toBe('create_asset_recipe');
+    expect(intent?.name).toBe('猫');
     expect(intent?.recipe).toHaveLength(1);
     expect(intent?.recipe?.[0]).toMatchObject({
       shape: 'circle',

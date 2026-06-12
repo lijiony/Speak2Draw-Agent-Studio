@@ -49,6 +49,50 @@ describe('sceneModel', () => {
     expect(selected.selectedId).toBe('shape-1');
   });
 
+  it('支持按素材组名称选择并移动整组图形', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '猫脸', groupId: 'asset-1', groupName: '猫', x: 300, y: 220 })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('triangle', { id: 'shape-2', name: '猫左耳', groupId: 'asset-1', groupName: '猫', x: 300, y: 180 })
+      }
+    ]);
+
+    const selected = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '猫' } });
+    const selectedByLongName = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '戴帽子的猫' } });
+    const moved = applyCommand(selected, { type: 'move_object', selector: { mode: 'by_name', name: '猫' }, direction: 'right' });
+
+    expect(selected.selectedId).toBe('shape-2');
+    expect(selectedByLongName.selectedId).toBe('shape-2');
+    expect(moved.objects.map((object) => object.x)).toEqual([348, 348]);
+  });
+
+  it('支持按素材组名称改色和删除整组图形', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '猫脸', groupId: 'asset-1', groupName: '猫', fill: '#f9fafb' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-2', name: '猫帽子', groupId: 'asset-1', groupName: '猫', fill: '#ef4444' })
+      }
+    ]);
+
+    const updated = applyCommand(scene, {
+      type: 'update_object',
+      selector: { mode: 'by_name', name: '猫' },
+      updates: { style: { fill: '#ec4899' } }
+    });
+    const deleted = applyCommand(updated, { type: 'delete_object', selector: { mode: 'by_name', name: '猫' } });
+
+    expect(updated.objects.map((object) => object.style.fill)).toEqual(['#ec4899', '#ec4899']);
+    expect(deleted.objects).toHaveLength(0);
+  });
+
   it('支持调整图层顺序并撤销', () => {
     const base = createEmptyScene();
     const house = createSceneObject('rectangle', { id: 'shape-1', name: '房子墙体' });

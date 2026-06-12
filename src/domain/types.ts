@@ -57,6 +57,8 @@ export interface SceneObject {
   id: string;
   kind: ShapeKind;
   name: string;
+  groupId?: string;
+  groupName?: string;
   x: number;
   y: number;
   width: number;
