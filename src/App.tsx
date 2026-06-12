@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Mic, MicOff, RotateCcw, Sparkles } from 'lucide-react';
+import { Download, Mic, MicOff, RotateCcw, Sparkles, Volume2 } from 'lucide-react';
 import { planCommands } from './domain/commandPlanner';
 import { executeDrawingCommands } from './domain/drawingExecutor';
 import { parseIntent } from './domain/intentParser';
 import { createEmptyScene } from './domain/sceneModel';
 import type { ExecutionResult, SceneObject, SceneState, VoiceTranscript } from './domain/types';
+import { runMicrophoneInputTest, type MicrophoneTestResult } from './voice/microphoneTest';
 import { useSpeechInput } from './voice/useSpeechInput';
 import { speak } from './voice/voiceFeedback';
 
@@ -13,6 +14,8 @@ export const App = () => {
   const sceneRef = useRef(scene);
   const [lastTranscript, setLastTranscript] = useState('等待语音指令');
   const [lastResult, setLastResult] = useState<ExecutionResult | null>(null);
+  const [micTestStatus, setMicTestStatus] = useState<'idle' | 'testing'>('idle');
+  const [micTestResult, setMicTestResult] = useState<MicrophoneTestResult | null>(null);
   const [history, setHistory] = useState<string[]>([]);
 
   useEffect(() => {
@@ -38,6 +41,15 @@ export const App = () => {
 
   const { status, error, activity, start, stop } = useSpeechInput(handleTranscript);
   const selected = useMemo(() => scene.objects.find((object) => object.id === scene.selectedId), [scene.objects, scene.selectedId]);
+
+  const handleMicrophoneTest = useCallback(async () => {
+    if (status === 'listening' || status === 'starting') stop();
+    setMicTestStatus('testing');
+    setMicTestResult(null);
+    const result = await runMicrophoneInputTest();
+    setMicTestResult(result);
+    setMicTestStatus('idle');
+  }, [status, stop]);
 
   return (
     <main className="app-shell">
@@ -67,6 +79,7 @@ export const App = () => {
 
           <aside className="side-panel" aria-label="语音状态">
             <StatusBlock status={status} error={error} activity={activity} />
+            <MicrophoneTestBlock status={micTestStatus} result={micTestResult} onTest={handleMicrophoneTest} />
             <InfoBlock title="最近听到" value={lastTranscript} />
             <InfoBlock title="系统反馈" value={lastResult?.message ?? '启动监听后，说出绘图指令。'} />
             <dl className="metrics">
@@ -209,6 +222,37 @@ const StatusBlock = ({ status, error, activity }: { status: string; error: Retur
     </section>
   );
 };
+
+const MicrophoneTestBlock = ({
+  status,
+  result,
+  onTest
+}: {
+  status: 'idle' | 'testing';
+  result: MicrophoneTestResult | null;
+  onTest: () => void;
+}) => (
+  <section className={`mic-test-block ${result ? (result.ok ? 'ok' : 'failed') : ''}`}>
+    <div className="mic-test-header">
+      <h2>麦克风输入测试</h2>
+      <button className="text-button" type="button" onClick={onTest} disabled={status === 'testing'}>
+        <Volume2 size={16} />
+        {status === 'testing' ? '测试中' : '测试麦克风'}
+      </button>
+    </div>
+    <p>{status === 'testing' ? '请对着麦克风说话 3 秒。' : '这个测试只看麦克风音量，不依赖语音识别服务。'}</p>
+    {result ? (
+      <div className="mic-test-result">
+        <strong>{result.title}</strong>
+        <p>{result.message}</p>
+        <div className="level-meter" aria-label={`麦克风峰值 ${(result.peak * 100).toFixed(1)}%`}>
+          <span style={{ width: `${Math.min(100, result.peak * 100)}%` }} />
+        </div>
+        <p className="status-action">{result.action}</p>
+      </div>
+    ) : null}
+  </section>
+);
 
 const InfoBlock = ({ title, value }: { title: string; value: string }) => (
   <section className="info-block">
