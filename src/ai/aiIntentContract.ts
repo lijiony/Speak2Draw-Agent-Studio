@@ -20,6 +20,11 @@ export interface AiClarificationContext {
   reason?: string;
 }
 
+export interface AiIntentEnvelope {
+  schemaVersion: typeof AI_INTENT_SCHEMA_VERSION;
+  intent: DrawingIntent;
+}
+
 export interface AiIntentSuccessPayload {
   ok: true;
   provider: 'deepseek';
@@ -34,6 +39,8 @@ export interface AiIntentFailurePayload {
 }
 
 export type AiIntentResponsePayload = AiIntentSuccessPayload | AiIntentFailurePayload;
+
+export const AI_INTENT_SCHEMA_VERSION = '1.0';
 
 const INTENT_TYPES: DrawingIntentType[] = [
   'sequence',
@@ -61,6 +68,50 @@ const SHAPES: ShapeKind[] = ['circle', 'rectangle', 'ellipse', 'line', 'triangle
 const DIRECTIONS: Array<NonNullable<DrawingIntent['direction']>> = ['left', 'right', 'up', 'down', 'center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const LAYERS: LayerDirection[] = ['front', 'back', 'forward', 'backward'];
 
+export const AI_INTENT_JSON_SCHEMA = {
+  schemaVersion: AI_INTENT_SCHEMA_VERSION,
+  responseShape: {
+    schemaVersion: AI_INTENT_SCHEMA_VERSION,
+    intent: {
+      type: INTENT_TYPES,
+      shape: SHAPES,
+      direction: DIRECTIONS,
+      layer: LAYERS,
+      color: '#RRGGBB',
+      selector: {
+        mode: ['selected', 'last', 'by_name', 'by_shape_color'],
+        name: 'string',
+        shape: SHAPES,
+        color: '#RRGGBB'
+      },
+      recipe: [
+        {
+          shape: SHAPES,
+          name: 'string',
+          color: '#RRGGBB',
+          strokeColor: '#RRGGBB',
+          strokeWidth: '1..16',
+          position: { x: '0..940', y: '0..580' },
+          width: '20..420',
+          height: '20..320',
+          text: 'string'
+        }
+      ],
+      intents: ['DrawingIntent[] for sequence only'],
+      reason: 'string for clarify or unknown'
+    }
+  },
+  intentRequirements: {
+    create_shape: ['shape'],
+    create_asset_recipe: ['recipe with at least one safe item'],
+    update_style: ['color or strokeColor or strokeWidth'],
+    move_object: ['direction'],
+    resize_object: ['scale'],
+    reorder_object: ['layer'],
+    sequence: ['1..6 non-sequence child intents']
+  }
+} as const;
+
 export const toAiIntentRequestPayload = (
   transcript: string,
   scene: SceneState,
@@ -84,7 +135,9 @@ export const buildDeepSeekMessages = (payload: AiIntentRequestPayload) => [
   {
     role: 'system',
     content:
-      '你是 Speak2Draw 的中文语音绘图意图解析器。只输出 JSON，不要解释。' +
+      '你是 Speak2Draw 的中文语音绘图意图解析器。只输出符合 schema 的 JSON，不要解释。' +
+      `固定输出格式：{"schemaVersion":"${AI_INTENT_SCHEMA_VERSION}","intent":{...}}。` +
+      `JSON schema 摘要：${JSON.stringify(AI_INTENT_JSON_SCHEMA)}。` +
       `把用户语音转换成一个 DrawingIntent。允许的 type：${INTENT_TYPES.join(', ')}。` +
       '如果请求包含 clarificationContext，说明上一轮语音没有执行成功；请把 originalTranscript、question 和本轮 transcript 合并理解，优先输出可执行意图。' +
       'shape 只能是 circle, rectangle, ellipse, line, triangle, text。direction 只能是 left, right, up, down, center, top-left, top-right, bottom-left, bottom-right。' +
@@ -104,7 +157,7 @@ export const parseDeepSeekIntentContent = (content: string, rawText: string): Dr
 };
 
 export const normalizeAiIntent = (value: unknown, rawText: string): DrawingIntent | null => {
-  return normalizeAiIntentValue(value, rawText, 0);
+  return normalizeAiIntentValue(unwrapAiIntentValue(value), rawText, 0);
 };
 
 const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number): DrawingIntent | null => {
@@ -116,7 +169,7 @@ const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number):
   if (type === 'sequence') {
     if (!Array.isArray(value.intents) || depth > 0) return null;
     const intents = value.intents.slice(0, 6).map((item) => normalizeAiIntentValue(item, rawText, depth + 1));
-    if (intents.some((item) => !item)) return null;
+    if (intents.length === 0 || intents.some((item) => !item || item.type === 'sequence' || item.type === 'unknown' || item.type === 'clarify')) return null;
     intent.intents = intents as DrawingIntent[];
     return intent;
   }
@@ -149,7 +202,35 @@ const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number):
   const recipe = normalizeRecipe(value.recipe);
   if (recipe.length > 0) intent.recipe = recipe;
 
-  return intent;
+  return isIntentStructurallyExecutable(intent) ? intent : null;
+};
+
+const unwrapAiIntentValue = (value: unknown) => {
+  if (!isRecord(value)) return value;
+  if (value.schemaVersion === AI_INTENT_SCHEMA_VERSION && isRecord(value.intent)) return value.intent;
+  return value;
+};
+
+const isIntentStructurallyExecutable = (intent: DrawingIntent) => {
+  switch (intent.type) {
+    case 'create_shape':
+      return Boolean(intent.shape);
+    case 'create_asset_recipe':
+      return Boolean(intent.recipe?.length);
+    case 'update_style':
+      return Boolean(intent.color || intent.strokeColor || intent.strokeWidth);
+    case 'move_object':
+      return Boolean(intent.direction);
+    case 'resize_object':
+      return typeof intent.scale === 'number';
+    case 'reorder_object':
+      return Boolean(intent.layer);
+    case 'clarify':
+    case 'unknown':
+      return Boolean(intent.reason);
+    default:
+      return true;
+  }
 };
 
 const normalizeRecipe = (recipe: unknown): DrawingRecipeItem[] => {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildDeepSeekMessages, normalizeAiIntent, parseDeepSeekIntentContent, toAiIntentRequestPayload } from './aiIntentContract';
+import {
+  AI_INTENT_JSON_SCHEMA,
+  AI_INTENT_SCHEMA_VERSION,
+  buildDeepSeekMessages,
+  normalizeAiIntent,
+  parseDeepSeekIntentContent,
+  toAiIntentRequestPayload
+} from './aiIntentContract';
 import { applyCommand, createEmptyScene, createSceneObject } from '../domain/sceneModel';
 
 describe('aiIntentContract', () => {
@@ -18,7 +25,29 @@ describe('aiIntentContract', () => {
     expect(payload.scene.selectedName).toBe('月亮');
     expect(payload.clarificationContext?.originalTranscript).toBe('把月亮改一下');
     expect(messages[0].content).toContain('clarificationContext');
+    expect(messages[0].content).toContain(`"schemaVersion":"${AI_INTENT_SCHEMA_VERSION}"`);
+    expect(AI_INTENT_JSON_SCHEMA.intentRequirements.create_shape).toContain('shape');
     expect(JSON.stringify(messages)).not.toContain('DEEPSEEK_API_KEY');
+  });
+
+  it('解析固定 schema 包裹格式', () => {
+    const intent = parseDeepSeekIntentContent(
+      JSON.stringify({
+        schemaVersion: AI_INTENT_SCHEMA_VERSION,
+        intent: {
+          type: 'create_shape',
+          shape: 'circle',
+          color: '#ef4444'
+        }
+      }),
+      '画一个红色圆形'
+    );
+
+    expect(intent).toMatchObject({
+      type: 'create_shape',
+      shape: 'circle',
+      color: '#ef4444'
+    });
   });
 
   it('解析并清洗 AI 返回的安全素材配方', () => {
@@ -62,5 +91,28 @@ describe('aiIntentContract', () => {
     expect(intent?.type).toBe('sequence');
     expect(intent?.intents?.map((item) => item.type)).toEqual(['create_shape', 'move_object']);
     expect(nested).toBeNull();
+  });
+
+  it('拒绝缺少必填字段的 AI 意图', () => {
+    expect(normalizeAiIntent({ type: 'create_shape', color: '#ef4444' }, '画红色的')).toBeNull();
+    expect(normalizeAiIntent({ type: 'update_style', selector: { mode: 'selected' } }, '变漂亮')).toBeNull();
+    expect(normalizeAiIntent({ type: 'move_object', selector: { mode: 'selected' } }, '移动一下')).toBeNull();
+    expect(normalizeAiIntent({ type: 'create_asset_recipe', recipe: [] }, '画一只猫')).toBeNull();
+    expect(normalizeAiIntent({ type: 'clarify' }, '那个')).toBeNull();
+  });
+
+  it('拒绝 sequence 中混入无法执行或澄清意图', () => {
+    const intent = normalizeAiIntent(
+      {
+        type: 'sequence',
+        intents: [
+          { type: 'create_shape', shape: 'circle', color: '#2563eb' },
+          { type: 'unknown', reason: '第二步不确定' }
+        ]
+      },
+      '画圆再随便弄'
+    );
+
+    expect(intent).toBeNull();
   });
 });
