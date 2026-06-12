@@ -63,6 +63,14 @@ export const mapSpeechError = (error: unknown): SpeechErrorInfo => {
     };
   }
 
+  if (name === 'no-transcript') {
+    return {
+      title: '没有返回识别文字',
+      message: '浏览器检测到了语音，但语音识别服务没有返回任何文字结果。',
+      action: '请确认使用 Chrome 或 Edge，并检查网络是否可用；也可以刷新页面后再试一次短指令。'
+    };
+  }
+
   if (name === 'unsupported') {
     return {
       title: '浏览器不支持语音识别',

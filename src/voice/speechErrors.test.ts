@@ -38,4 +38,9 @@ describe('mapSpeechError', () => {
     const info = mapSpeechError('nomatch');
     expect(info.title).toContain('没有识别出文字');
   });
+
+  it('识别浏览器没有返回文字的错误', () => {
+    const info = mapSpeechError('no-transcript');
+    expect(info.title).toContain('没有返回识别文字');
+  });
 });
