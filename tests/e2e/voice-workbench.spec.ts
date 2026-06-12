@@ -7,21 +7,36 @@ declare global {
       getScene: () => { objects: Array<{ name: string; groupName?: string; kind: string; x: number; style: { fill: string } }> };
       getAiStatus: () => { state: string; message: string };
       getClarification: () => { originalTranscript: string; question: string } | null;
+      getVoiceDiagnostics: () => { policyMode: string; phase: string; interimText: string | null; finalText: string | null };
     };
   }
 }
 
-const openWorkbench = async (page: Page) => {
+const openWorkbench = async (page: Page, query = 'e2e=1') => {
   const consoleErrors = collectConsoleErrors(page);
-  await page.goto('/?e2e=1');
+  await page.goto(`/?${query}`);
   await expect(page.getByRole('heading', { name: '纯语音绘图工作台' })).toBeVisible();
   await expect(page.getByRole('button', { name: '启动语音监听' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => Boolean(window.__speak2drawTest))).toBe(true);
   return consoleErrors;
 };
 
+test('语音端点策略可以通过 URL 切换到耐心模式', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page, 'e2e=1&voicePolicy=patient');
+
+  expect(await page.evaluate(() => window.__speak2drawTest?.getVoiceDiagnostics())).toMatchObject({
+    policyMode: 'patient',
+    phase: 'idle'
+  });
+  expect(consoleErrors).toEqual([]);
+});
+
 test('语音文本可以驱动复杂绘图和按名称编辑', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getVoiceDiagnostics())).toMatchObject({
+    policyMode: 'balanced',
+    phase: 'idle'
+  });
 
   await submitVoiceText(page, '画一个房子和太阳');
   await expect(systemFeedback(page)).toContainText('已拆解并执行 5 个绘图步骤。');
@@ -314,6 +329,17 @@ test('纯语音查询可以返回帮助和画布状态', async ({ page }) => {
 
 test('模糊样式指令不会误报成功', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false,
+        provider: 'local',
+        reason: '测试环境未配置 DeepSeek。'
+      })
+    });
+  });
 
   await submitVoiceText(page, '画一个蓝色圆形');
   await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 1 个图形。');
@@ -362,10 +388,15 @@ const aiStatus = (page: Page) =>
 const collectConsoleErrors = (page: Page) => {
   const errors: string[] = [];
   page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(message.text());
+    if (message.type() === 'error' && !isIgnoredConsoleError(message.text(), message.location().url)) {
+      errors.push(message.text());
+    }
   });
   page.on('pageerror', (error) => {
     errors.push(error.message);
   });
   return errors;
 };
+
+const isIgnoredConsoleError = (text: string, url: string) =>
+  url.endsWith('/favicon.ico') && text.includes('404');
