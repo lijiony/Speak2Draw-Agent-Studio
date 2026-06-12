@@ -90,11 +90,17 @@ export const applyCommand = (scene: SceneState, command: DrawingCommand): SceneS
       const scale = command.scale ?? 1;
       const resized = {
         ...target,
-        width: clamp(target.width * scale, 20, CANVAS_WIDTH),
-        height: clamp(target.height * scale, 20, CANVAS_HEIGHT)
+        width: clamp(target.width * scale, 20, CANVAS_WIDTH - target.x),
+        height: clamp(target.height * scale, 20, CANVAS_HEIGHT - target.y)
       };
       const objects = scene.objects.map((object) => (object.id === target.id ? resized : object));
       return withHistory(scene, { objects, selectedId: target.id });
+    }
+    case 'reorder_object': {
+      const target = findObject(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
+      if (!target) return scene;
+      const objects = reorderObject(scene.objects, target.id, command.layer ?? 'front');
+      return objects === scene.objects ? scene : withHistory(scene, { objects, selectedId: target.id });
     }
     case 'delete_object': {
       const target = findObject(scene.objects, command.selector ?? { mode: 'selected' }, scene.selectedId);
@@ -176,6 +182,30 @@ const moveObject = (object: SceneObject, direction: DrawingCommand['direction'])
     x: clamp(next.x, 0, CANVAS_WIDTH - object.width),
     y: clamp(next.y, 0, CANVAS_HEIGHT - object.height)
   };
+};
+
+const reorderObject = (
+  objects: SceneObject[],
+  targetId: string,
+  layer: NonNullable<DrawingCommand['layer']>
+) => {
+  const fromIndex = objects.findIndex((object) => object.id === targetId);
+  if (fromIndex < 0) return objects;
+
+  const lastIndex = objects.length - 1;
+  const toIndex = {
+    front: lastIndex,
+    back: 0,
+    forward: Math.min(fromIndex + 1, lastIndex),
+    backward: Math.max(fromIndex - 1, 0)
+  }[layer];
+
+  if (fromIndex === toIndex) return objects;
+
+  const nextObjects = [...objects];
+  const [target] = nextObjects.splice(fromIndex, 1);
+  nextObjects.splice(toIndex, 0, target);
+  return nextObjects;
 };
 
 const defaultSize = (kind: ShapeKind) => {

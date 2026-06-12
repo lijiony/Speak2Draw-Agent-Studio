@@ -1,4 +1,5 @@
 export type ShapeKind = 'circle' | 'rectangle' | 'ellipse' | 'line' | 'triangle' | 'text';
+export type LayerDirection = 'front' | 'back' | 'forward' | 'backward';
 
 export type DrawingIntentType =
   | 'create_shape'
@@ -7,6 +8,7 @@ export type DrawingIntentType =
   | 'update_style'
   | 'move_object'
   | 'resize_object'
+  | 'reorder_object'
   | 'delete_object'
   | 'undo'
   | 'redo'
@@ -21,6 +23,7 @@ export type DrawingCommandType =
   | 'update_object'
   | 'move_object'
   | 'resize_object'
+  | 'reorder_object'
   | 'delete_object'
   | 'undo'
   | 'redo'
@@ -79,6 +82,7 @@ export interface DrawingIntent {
   text?: string;
   selector?: ObjectSelector;
   direction?: 'left' | 'right' | 'up' | 'down' | 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  layer?: LayerDirection;
   scale?: number;
   reason?: string;
 }
@@ -98,6 +102,7 @@ export interface DrawingCommand {
     style?: Partial<SceneStyle>;
   };
   direction?: DrawingIntent['direction'];
+  layer?: LayerDirection;
   scale?: number;
 }
 

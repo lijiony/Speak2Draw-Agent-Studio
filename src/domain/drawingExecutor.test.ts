@@ -43,4 +43,22 @@ describe('voice drawing flow', () => {
     expect(sun?.style.fill).toBe('#ef4444');
     expect(updated.scene.objects.filter((object) => object.name.includes('房子'))).toHaveLength(4);
   });
+
+  it('按对象名称调整图层顺序', () => {
+    resetCommandIdsForTest();
+    const createInput = transcript('画一个房子和太阳');
+    const created = executeDrawingCommands(
+      createEmptyScene(),
+      planCommands(parseIntent(createInput), createEmptyScene()).commands,
+      createInput
+    );
+
+    const layerInput = transcript('把房子放到最上层');
+    const plan = planCommands(parseIntent(layerInput), created.scene);
+    const layered = executeDrawingCommands(created.scene, plan.commands, layerInput, plan);
+
+    expect(layered.ok).toBe(true);
+    expect(layered.message).toBe('已调整图层顺序。');
+    expect(layered.scene.objects[layered.scene.objects.length - 1]?.name).toContain('房子');
+  });
 });

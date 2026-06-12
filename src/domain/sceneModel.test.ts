@@ -31,4 +31,37 @@ describe('sceneModel', () => {
     const selected = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '房子' } });
     expect(selected.selectedId).toBe('shape-1');
   });
+
+  it('支持调整图层顺序并撤销', () => {
+    const base = createEmptyScene();
+    const house = createSceneObject('rectangle', { id: 'shape-1', name: '房子墙体' });
+    const sun = createSceneObject('circle', { id: 'shape-2', name: '太阳' });
+    const created = applyCommand(applyCommand(base, { type: 'create_object', object: house }), {
+      type: 'create_object',
+      object: sun
+    });
+
+    const reordered = applyCommand(created, {
+      type: 'reorder_object',
+      selector: { mode: 'by_name', name: '房子' },
+      layer: 'front'
+    });
+    expect(reordered.objects.map((object) => object.id)).toEqual(['shape-2', 'shape-1']);
+    expect(reordered.selectedId).toBe('shape-1');
+
+    const undone = applyCommand(reordered, { type: 'undo' });
+    expect(undone.objects.map((object) => object.id)).toEqual(['shape-1', 'shape-2']);
+  });
+
+  it('放大对象时不会越出画布边界', () => {
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('rectangle', { id: 'shape-1', x: 900, y: 560, width: 50, height: 35 })
+    });
+    const resized = applyCommand(scene, { type: 'resize_object', selector: { mode: 'selected' }, scale: 3 });
+    const object = resized.objects[0];
+
+    expect(object.x + object.width).toBeLessThanOrEqual(960);
+    expect(object.y + object.height).toBeLessThanOrEqual(600);
+  });
 });

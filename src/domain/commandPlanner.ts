@@ -39,6 +39,8 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       return hasEditableTarget(scene, intent.selector) ? { commands: [{ type: 'move_object', selector: intent.selector, direction: intent.direction }] } : noTarget();
     case 'resize_object':
       return hasEditableTarget(scene, intent.selector) ? { commands: [{ type: 'resize_object', selector: intent.selector, scale: intent.scale }] } : noTarget();
+    case 'reorder_object':
+      return hasEditableTarget(scene, intent.selector) ? { commands: [{ type: 'reorder_object', selector: intent.selector, layer: intent.layer }] } : noTarget();
     case 'delete_object':
       return hasEditableTarget(scene, intent.selector) ? { commands: [{ type: 'delete_object', selector: intent.selector }] } : noTarget();
     case 'undo':

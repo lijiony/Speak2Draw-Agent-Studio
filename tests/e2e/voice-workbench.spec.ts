@@ -4,6 +4,7 @@ declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => void;
+      getScene: () => { objects: Array<{ name: string }> };
     };
   }
 }
@@ -29,6 +30,11 @@ test('语音文本可以驱动复杂绘图和按名称编辑', async ({ page }) 
   await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 5 个图形。');
   await expect(page.locator('svg circle[fill="#ef4444"]')).toHaveCount(1);
   await expect(page.locator('svg rect[fill="#fef3c7"]')).toHaveCount(1);
+
+  await submitVoiceText(page, '把房子放到最上层');
+  await expect(systemFeedback(page)).toContainText('已调整图层顺序。');
+  const objectNames = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? []);
+  expect(objectNames[objectNames.length - 1]).toContain('房子');
 
   expect(consoleErrors).toEqual([]);
 });

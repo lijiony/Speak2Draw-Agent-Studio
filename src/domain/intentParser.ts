@@ -74,6 +74,9 @@ export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
     };
   }
 
+  const layer = detectLayerDirection(text);
+  if (layer) return { type: 'reorder_object', rawText, selector: detectTargetSelector(text, true), layer };
+
   const resize = detectResize(text);
   if (resize) return { type: 'resize_object', rawText, selector: detectTargetSelector(text, true), scale: resize };
 
@@ -175,6 +178,14 @@ const detectDirection = (text: string): DrawingIntent['direction'] => {
 const detectResize = (text: string) => {
   if (/(放大|变大|大一点|大一些)/.test(text)) return 1.2;
   if (/(缩小|变小|小一点|小一些)/.test(text)) return 0.8;
+  return undefined;
+};
+
+const detectLayerDirection = (text: string): DrawingIntent['layer'] => {
+  if (/(置顶|顶层|最上层|最前面|放到最前|放到前面|移到最前|移到前面)/.test(text)) return 'front';
+  if (/(置底|底层|最下层|最后面|放到最后|放到后面|移到最后|移到后面)/.test(text)) return 'back';
+  if (/(前移一层|上移一层|往前一层|向前一层)/.test(text)) return 'forward';
+  if (/(后移一层|下移一层|往后一层|向后一层)/.test(text)) return 'backward';
   return undefined;
 };
 

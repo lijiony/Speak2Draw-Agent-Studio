@@ -83,4 +83,16 @@ describe('parseIntent', () => {
     expect(parseIntent(transcript('删除太阳')).selector).toMatchObject({ mode: 'by_name', name: '太阳' });
     expect(parseIntent(transcript('放大机器人')).selector).toMatchObject({ mode: 'by_name', name: '机器人' });
   });
+
+  it('解析图层顺序调整指令', () => {
+    const front = parseIntent(transcript('把太阳放到最上层'));
+    expect(front.type).toBe('reorder_object');
+    expect(front.selector).toMatchObject({ mode: 'by_name', name: '太阳' });
+    expect(front.layer).toBe('front');
+
+    const back = parseIntent(transcript('把房子放到最后面'));
+    expect(back.type).toBe('reorder_object');
+    expect(back.selector).toMatchObject({ mode: 'by_name', name: '房子' });
+    expect(back.layer).toBe('back');
+  });
 });

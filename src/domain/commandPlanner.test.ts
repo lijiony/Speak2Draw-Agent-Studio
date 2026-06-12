@@ -44,4 +44,17 @@ describe('planCommands', () => {
     expect(plan.needsClarification).toBe(true);
     expect(plan.commands).toHaveLength(0);
   });
+
+  it('目标对象不存在时，图层调整会要求澄清', () => {
+    const intent: DrawingIntent = {
+      type: 'reorder_object',
+      rawText: '把太阳放到最上层',
+      selector: { mode: 'by_name', name: '太阳' },
+      layer: 'front'
+    };
+
+    const plan = planCommands(intent, createEmptyScene());
+    expect(plan.needsClarification).toBe(true);
+    expect(plan.commands).toHaveLength(0);
+  });
 });
