@@ -25,6 +25,17 @@ describe('TranscriptAssembler', () => {
     });
   });
 
+  it('不会用更短的重复中间结果覆盖完整长句', () => {
+    const assembler = new TranscriptAssembler();
+    assembler.recordInterim('画一个房子和太阳', 0.8, 30);
+    assembler.recordInterim('画一个房子', 0.9, 40);
+
+    expect(assembler.getFallbackCandidate()).toMatchObject({
+      text: '画一个房子和太阳',
+      receivedAt: 30
+    });
+  });
+
   it('提交后会阻止同一轮语音重复执行', () => {
     const assembler = new TranscriptAssembler();
     const first = assembler.commit(createTranscriptCandidate('撤销', 0.8, 10, true), 50);

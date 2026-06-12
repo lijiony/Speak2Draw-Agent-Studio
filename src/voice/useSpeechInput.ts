@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VoiceTranscript } from '../domain/types';
 import { DEFAULT_ENDPOINT_POLICY } from './endpointPolicy';
+import { collectRecognitionSnapshot } from './recognitionSnapshot';
 import { mapSpeechError, type SpeechErrorInfo } from './speechErrors';
 import { createBrowserSpeechRecognition } from './speechProvider';
 import { TranscriptAssembler, type TranscriptCandidate } from './transcriptAssembler';
@@ -171,17 +172,17 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
       armSilenceTimer();
     };
     recognition.onresult = (event) => {
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const alternative = result[0];
-        if (!result.isFinal) {
-          transcriptAssemblerRef.current.recordInterim(alternative.transcript, alternative.confidence, performance.now());
-          setActivity(`正在识别：“${alternative.transcript.trim()}”（继续说，我会等你停顿后执行）`);
-          armInterimCommitTimer(DEFAULT_ENDPOINT_POLICY.interimStabilityMs);
-          continue;
-        }
-        emitTranscript(transcriptAssemblerRef.current.createFinal(alternative.transcript, alternative.confidence, performance.now()));
+      const snapshot = collectRecognitionSnapshot(event.results, performance.now());
+      if (!snapshot) return;
+
+      if (!snapshot.isFinal) {
+        const interim = transcriptAssemblerRef.current.recordInterim(snapshot.text, snapshot.confidence, snapshot.receivedAt);
+        setActivity(`正在识别：“${interim?.text ?? snapshot.text}”（继续说，我会等你停顿后执行）`);
+        armInterimCommitTimer(DEFAULT_ENDPOINT_POLICY.interimStabilityMs);
+        return;
       }
+
+      emitTranscript(transcriptAssemblerRef.current.createFinal(snapshot.text, snapshot.confidence, snapshot.receivedAt));
     };
     recognition.onerror = (event) => {
       setError(mapSpeechError(event));

@@ -19,6 +19,9 @@ export class TranscriptAssembler {
   recordInterim(text: string, confidence: number, receivedAt: number) {
     const candidate = createTranscriptCandidate(text, confidence, receivedAt, false);
     if (!candidate) return null;
+    if (this.latestInterim && isShorterContainedText(candidate.text, this.latestInterim.text)) {
+      return this.latestInterim;
+    }
     this.latestInterim = candidate;
     return candidate;
   }
@@ -68,3 +71,6 @@ const normalizeConfidence = (confidence: number, isFinal: boolean) => {
   if (Number.isFinite(confidence) && confidence > 0) return confidence;
   return isFinal ? 0.9 : 0.85;
 };
+
+const isShorterContainedText = (nextText: string, previousText: string) =>
+  nextText.length < previousText.length && previousText.includes(nextText);
