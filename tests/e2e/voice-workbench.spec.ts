@@ -32,10 +32,14 @@ test('导航页两个入口按钮都可以进入语音绘图工作台', async ({
   await expect(page.locator('.landing-nav')).toContainText('canan');
   await expect(page.getByRole('heading', { name: 'AI 语音绘图工具' })).toBeVisible();
   await expect(page.locator('.landing-primary-button')).toContainText(/Speak2Draw-\s*Agent-Studio/);
+  await expect(page.locator('.landing-keyword-stream')).toContainText('复杂指令拆解');
+  await expect(page.locator('.landing-keyword-stream')).toContainText('选择房子窗户');
   await expect(page.locator('.landing-info-panel')).not.toHaveClass(/is-open/);
   await page.locator('.landing-ink-card').click();
   await expect(page.locator('.landing-info-panel')).toHaveClass(/is-open/);
   await expect(page.locator('.landing-info-panel article')).toHaveCount(4);
+  await page.getByRole('button', { name: /说出想法/ }).hover();
+  await expect(page.locator('#landing-flow-detail')).toContainText('麦克风持续收音');
   await page.getByRole('button', { name: /理解意图/ }).hover();
   await expect(page.locator('#landing-flow-detail')).toContainText('如何保证靠谱');
   await expect(page.locator('#landing-flow-detail')).toContainText('受控 JSON 指令');

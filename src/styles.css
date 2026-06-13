@@ -4835,6 +4835,82 @@ h2 {
   font-size: 13px;
 }
 
+.landing-keyword-stream {
+  position: absolute;
+  right: 9%;
+  bottom: min(40vh, 370px);
+  left: 9%;
+  z-index: 3;
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+  padding: 2px 0;
+  color: rgba(17, 24, 39, 0.42);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  mask-image: linear-gradient(90deg, transparent 0, #000 13%, #000 87%, transparent 100%);
+  pointer-events: auto;
+}
+
+.keyword-lane {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.keyword-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 34px;
+  min-width: max-content;
+  animation: landingKeywordMoveLeft 22s linear infinite;
+}
+
+.keyword-lane.lane-2 .keyword-track {
+  animation-name: landingKeywordMoveRight;
+  animation-duration: 25s;
+}
+
+.landing-keyword-stream:hover .keyword-track {
+  animation-play-state: paused;
+}
+
+.keyword-track span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.keyword-track span::before {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(22, 119, 255, 0.28);
+  content: "";
+}
+
+@keyframes landingKeywordMoveLeft {
+  from {
+    transform: translateX(-50%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes landingKeywordMoveRight {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
 .landing-ink-card {
   right: 9%;
   bottom: -15vh;
@@ -5021,20 +5097,32 @@ h2 {
 .landing-flow-detail {
   position: absolute;
   top: -216px;
-  left: 50%;
+  left: clamp(350px, var(--active-flow-left), calc(100% - 350px));
   z-index: 5;
   width: min(660px, calc(100vw - 80px));
   min-height: 188px;
-  border: 1px solid rgba(225, 229, 236, 0.66);
+  isolation: isolate;
+  border: 1px solid rgba(225, 229, 236, 0.76);
   border-radius: 24px;
   padding: 24px 26px 24px;
   color: #172033;
-  background: rgba(255, 255, 255, 0.62);
-  box-shadow: 0 28px 82px rgba(15, 23, 42, 0.13);
-  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 28px 82px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(22px);
   transform: translateX(-50%);
   animation: landingFlowDetailIn 240ms ease both;
   pointer-events: auto;
+}
+
+.landing-flow-detail::before {
+  position: absolute;
+  inset: -20px;
+  z-index: -1;
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: 0 18px 70px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(18px);
+  content: "";
 }
 
 @keyframes landingFlowDetailIn {
@@ -5125,9 +5213,25 @@ h2 {
     padding: 58px 36px 36px;
   }
 
+  .landing-keyword-stream {
+    right: 6%;
+    bottom: min(39vh, 320px);
+    left: 6%;
+    font-size: 11px;
+  }
+
   .landing-flow-detail {
     top: -238px;
     width: min(620px, calc(100vw - 48px));
+    left: 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .keyword-track,
+  .keyword-lane.lane-2 .keyword-track {
+    animation: none;
+    transform: translateX(0);
   }
 }
 
@@ -5175,6 +5279,19 @@ h2 {
     width: min(332px, calc(100vw - 56px));
     min-height: 64px;
     font-size: 13px;
+  }
+
+  .landing-keyword-stream {
+    right: 20px;
+    bottom: 43vh;
+    left: 20px;
+    gap: 8px;
+    font-size: 10px;
+  }
+
+  .keyword-track {
+    gap: 24px;
+    animation-duration: 18s;
   }
 
   .landing-ink-card {

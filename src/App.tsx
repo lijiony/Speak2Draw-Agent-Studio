@@ -684,6 +684,10 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
   ];
   const visibleFlowIndex = previewOpen ? (pinnedFlowIndex ?? activeFlowIndex) : null;
   const visibleFlow = visibleFlowIndex === null ? null : infoColumns[visibleFlowIndex];
+  const keywordRows = [
+    ['语音端点检测', '中文意图解析', '低置信度澄清', '复杂指令拆解', 'AI 安全兜底', '局部对象编辑', 'SVG 实时渲染', '撤销重做记录'],
+    ['戴帽子的小猫', '删除帽子', '选择房子窗户', '打开状态信息', '测试 AI 连接', '导出 SVG', '清空画布', '恢复画布模式']
+  ];
   const closePreview = () => {
     setPreviewOpen(false);
     setActiveFlowIndex(null);
@@ -732,6 +736,18 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
         </button>
       </section>
 
+      <section className="landing-keyword-stream" aria-hidden="true">
+        {keywordRows.map((row, rowIndex) => (
+          <div className={`keyword-lane lane-${rowIndex + 1}`} key={rowIndex}>
+            <div className="keyword-track">
+              {[...row, ...row].map((word, index) => (
+                <span key={`${word}-${index}`}>{word}</span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </section>
+
       <section
         className={`landing-info-panel${previewOpen ? ' is-open' : ''}`}
         aria-label="产品信息面板"
@@ -765,7 +781,12 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
           </article>
         ))}
         {visibleFlow ? (
-          <aside className="landing-flow-detail" id="landing-flow-detail" aria-live="polite">
+          <aside
+            className="landing-flow-detail"
+            id="landing-flow-detail"
+            aria-live="polite"
+            style={{ '--active-flow-left': `${((visibleFlowIndex ?? 0) + 0.5) * 25}%` } as CSSProperties}
+          >
             <button
               className="landing-flow-detail-close"
               type="button"
