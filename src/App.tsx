@@ -707,7 +707,7 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
     <main className={`landing-shell${previewOpen ? ' preview-open' : ''}`} aria-label="Speak2Draw 导航页">
       <div className="landing-background" aria-hidden="true" />
       <header className="landing-nav" aria-label="导航">
-        <strong>S2D</strong>
+        <img className="landing-brand-logo" src="/qiniu-xengineer-logo.png" alt="七牛云 XEngineer" />
         <span>canan</span>
         <button type="button" onClick={onEnter}>
           进入

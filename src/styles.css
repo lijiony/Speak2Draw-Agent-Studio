@@ -4780,6 +4780,13 @@ h2 {
   font-size: 21px;
 }
 
+.landing-brand-logo {
+  justify-self: start;
+  width: min(214px, 34vw);
+  height: auto;
+  object-fit: contain;
+}
+
 .landing-nav > span {
   font-size: 11px;
 }
@@ -5235,6 +5242,27 @@ h2 {
   }
 }
 
+.landing-primary-button > span,
+.landing-primary-button > strong {
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+}
+
+.landing-primary-button > strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.landing-primary-button > strong svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.4;
+}
+
 @media (max-width: 760px) {
   .landing-nav {
     padding: 14px 20px 0;
@@ -5242,6 +5270,10 @@ h2 {
 
   .landing-nav strong {
     font-size: 22px;
+  }
+
+  .landing-brand-logo {
+    width: min(168px, 42vw);
   }
 
   .landing-nav > span {
