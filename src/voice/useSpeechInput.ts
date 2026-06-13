@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VoiceTranscript } from '../domain/types';
 import { resolveEndpointPolicy, type EndpointPolicyMode } from './endpointPolicy';
+import { resolveRecognitionEndAction } from './recognitionLifecycle';
 import { collectRecognitionSnapshot } from './recognitionSnapshot';
 import { mapSpeechError, type SpeechErrorInfo } from './speechErrors';
 import { createBrowserSpeechRecognition } from './speechProvider';
@@ -23,7 +24,9 @@ export type SpeechDiagnosticPhase =
   | 'no_speech'
   | 'error'
   | 'stopped'
-  | 'restarting';
+  | 'restarting'
+  | 'processing'
+  | 'speaking';
 
 export interface SpeechDiagnostics {
   policyMode: EndpointPolicyMode;
@@ -36,6 +39,8 @@ export interface SpeechDiagnostics {
 
 export interface SpeechInputOptions {
   policyMode?: EndpointPolicyMode;
+  suspended?: boolean;
+  shouldIgnoreTranscript?: (transcript: VoiceTranscript) => boolean;
 }
 
 export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => void, options: SpeechInputOptions = {}) => {
@@ -63,6 +68,10 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   const startTimeoutRef = useRef<number | null>(null);
   const permissionTimerRef = useRef<number | null>(null);
   const startRequestIdRef = useRef(0);
+  const utteranceCounterRef = useRef(1);
+  const currentUtteranceRef = useRef<{ id: string; startedAt: number } | null>(null);
+  const suspendedRef = useRef(Boolean(options.suspended));
+  const shouldIgnoreTranscriptRef = useRef(options.shouldIgnoreTranscript);
   const setSpeechStatus = (nextStatus: SpeechStatus) => {
     statusRef.current = nextStatus;
     setStatus(nextStatus);
@@ -142,6 +151,10 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     }));
   }, [policyMode]);
 
+  useEffect(() => {
+    shouldIgnoreTranscriptRef.current = options.shouldIgnoreTranscript;
+  }, [options.shouldIgnoreTranscript]);
+
   const armStartTimeout = () => {
     clearStartTimeout();
     startTimeoutRef.current = window.setTimeout(() => {
@@ -187,9 +200,21 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   };
 
   const emitTranscript = (candidate: TranscriptCandidate | null) => {
-    const transcript = transcriptAssemblerRef.current.commit(candidate, performance.now());
+    const committedAt = performance.now();
+    const utterance = currentUtteranceRef.current;
+    const transcript = transcriptAssemblerRef.current.commit(candidate, committedAt, {
+      source: candidate?.isFinal ? 'final' : 'interim-fallback',
+      utteranceId: utterance?.id,
+      startedAt: utterance?.startedAt,
+      stabilityMs: candidate ? Math.max(0, Math.round(committedAt - candidate.receivedAt)) : undefined
+    });
     if (!transcript) return;
     clearRecognitionTimers();
+    if (shouldIgnoreTranscriptRef.current?.(transcript)) {
+      setActivity('已忽略系统朗读或过期语音回声。');
+      markDiagnostics('speaking', { reason: '已忽略系统朗读回声' });
+      return;
+    }
     setError(null);
     setActivity(transcript.isFinal ? `已识别：“${transcript.text}”` : `根据中间识别执行：“${transcript.text}”`);
     markDiagnostics(transcript.isFinal ? 'final_result' : 'fallback_commit', {
@@ -200,12 +225,17 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     onTranscript(transcript);
   };
 
+  const emitFallbackTranscript = () => {
+    const interim = transcriptAssemblerRef.current.getFallbackCandidate();
+    if (!interim || transcriptAssemblerRef.current.hasCommitted()) return false;
+    emitTranscript(interim);
+    return true;
+  };
+
   const armInterimCommitTimer = (delayMs: number) => {
     clearInterimCommitTimer();
     interimCommitTimerRef.current = window.setTimeout(() => {
-      const interim = transcriptAssemblerRef.current.getFallbackCandidate();
-      if (statusRef.current === 'listening' && interim && !transcriptAssemblerRef.current.hasCommitted()) {
-        emitTranscript(interim);
+      if (statusRef.current === 'listening' && emitFallbackTranscript()) {
         try {
           recognitionRef.current?.stop();
         } catch {
@@ -219,10 +249,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     clearResultTimer();
     resultTimerRef.current = window.setTimeout(() => {
       if (statusRef.current !== 'listening' || transcriptAssemblerRef.current.hasCommitted()) return;
-      const interim = transcriptAssemblerRef.current.getFallbackCandidate();
-      if (interim) {
-        emitTranscript(interim);
-      } else {
+      if (!emitFallbackTranscript()) {
         setError(mapSpeechError('no-transcript'));
         setActivity('检测到语音，但浏览器没有返回识别文字，正在重新监听。');
       }
@@ -237,6 +264,10 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   const startRecognition = () => {
     try {
       transcriptAssemblerRef.current.reset();
+      currentUtteranceRef.current = {
+        id: `utt-${Date.now()}-${utteranceCounterRef.current++}`,
+        startedAt: performance.now()
+      };
       setSpeechStatus('starting');
       markDiagnostics('starting', { interimText: null, finalText: null, reason: null });
       armStartTimeout();
@@ -334,18 +365,39 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     };
     recognition.onend = () => {
       clearStartTimeout();
-      clearRecognitionTimers();
-      if (listeningRequestedRef.current && statusRef.current !== 'error') {
-        setActivity('本轮监听已结束，正在继续等待下一条指令。');
-        markDiagnostics('restarting');
+      if (suspendedRef.current) {
+        clearRecognitionTimers();
+        setSpeechStatus('idle');
+        setActivity('系统正在语音反馈，暂缓监听。');
+        markDiagnostics('speaking', { reason: '系统语音反馈中' });
+        return;
+      }
+
+      const endAction = resolveRecognitionEndAction({
+        listeningRequested: listeningRequestedRef.current,
+        status: statusRef.current,
+        hasPendingFallback: Boolean(transcriptAssemblerRef.current.getFallbackCandidate()) && !transcriptAssemblerRef.current.hasCommitted()
+      });
+
+      if (endAction === 'commit_fallback_and_restart' || endAction === 'restart') {
+        if (endAction === 'commit_fallback_and_restart') {
+          emitFallbackTranscript();
+        } else {
+          clearRecognitionTimers();
+          setActivity('本轮监听已结束，正在继续等待下一条指令。');
+          markDiagnostics('restarting');
+        }
         clearRestartTimer();
         restartTimerRef.current = window.setTimeout(() => {
           if (listeningRequestedRef.current) startRecognition();
         }, endpointPolicy.restartDelayMs);
-      } else if (statusRef.current === 'listening' || statusRef.current === 'starting') {
+      } else if (endAction === 'idle') {
+        clearRecognitionTimers();
         setSpeechStatus('idle');
         setActivity('监听已结束。');
         markDiagnostics('idle');
+      } else {
+        clearRecognitionTimers();
       }
     };
     recognitionRef.current = recognition;
@@ -363,8 +415,39 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     };
   }, [onTranscript, endpointPolicy.finalResultTimeoutMs, endpointPolicy.interimStabilityMs, endpointPolicy.noSpeechTimeoutMs, endpointPolicy.restartDelayMs, endpointPolicy.speechEndGraceMs, policyMode]);
 
+  useEffect(() => {
+    suspendedRef.current = Boolean(options.suspended);
+    if (options.suspended) {
+      clearRecognitionTimers();
+      clearRestartTimer();
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // The recognizer may already be stopped when speech feedback starts.
+      }
+      if (statusRef.current === 'starting' || statusRef.current === 'listening') {
+        setSpeechStatus('idle');
+      }
+      setActivity('系统正在语音反馈，稍后自动恢复监听。');
+      markDiagnostics('speaking', { reason: '系统语音反馈中' });
+      return;
+    }
+
+    if (listeningRequestedRef.current && statusRef.current === 'idle') {
+      setActivity('语音反馈结束，正在恢复监听。');
+      markDiagnostics('restarting', { reason: null });
+      startRecognition();
+    }
+  }, [options.suspended]);
+
   const start = async () => {
     if (statusRef.current === 'starting' || statusRef.current === 'listening') return;
+    if (suspendedRef.current) {
+      listeningRequestedRef.current = true;
+      setActivity('系统正在语音反馈，结束后会自动开始监听。');
+      markDiagnostics('speaking', { reason: '系统语音反馈中' });
+      return;
+    }
 
     if (!window.isSecureContext && !isLocalhost()) {
       setSpeechStatus('error');

@@ -34,12 +34,21 @@ import type { AiClarificationContext } from './ai/aiIntentContract';
 import { planCommands } from './domain/commandPlanner';
 import { executeDrawingCommands } from './domain/drawingExecutor';
 import { parseIntent } from './domain/intentParser';
-import { createEmptyScene } from './domain/sceneModel';
-import type { DrawingIntent, DrawingRecipeItem, ExecutionResult, SceneObject, SceneState, VoiceTranscript } from './domain/types';
+import { createEmptyScene, findObjects } from './domain/sceneModel';
+import type { DrawingCommand, DrawingIntent, DrawingRecipeItem, ExecutionResult, SceneObject, SceneState, VoiceTranscript } from './domain/types';
 import { runMicrophoneInputTest, type MicrophoneInputSample, type MicrophoneTestResult } from './voice/microphoneTest';
 import type { EndpointPolicyMode } from './voice/endpointPolicy';
 import { useSpeechInput, type SpeechDiagnostics } from './voice/useSpeechInput';
 import { speak } from './voice/voiceFeedback';
+import { VoiceCommandQueue, type VoiceCommandItem, type VoiceCommandQueueSnapshot } from './voice/voiceCommandQueue';
+import {
+  isClarificationCancelText,
+  isConfirmationAcceptText,
+  isConfirmationCancelText,
+  isLikelyEcho,
+  isRiskyTranscriptSource,
+  looksLikeStandaloneCommand
+} from './voice/voiceSafety';
 import {
   loadAppSettings,
   resetAppSettings,
@@ -57,6 +66,8 @@ type AiResolutionStatus = {
 
 type ClarificationState = AiClarificationContext & {
   waiting: true;
+  createdAt: number;
+  expiresAt: number;
 };
 
 type HistoryItem = {
@@ -85,6 +96,45 @@ type AiConnectionStatus = {
   checkedAt?: string;
 };
 
+type VoiceRuntimePhase =
+  | 'idle'
+  | 'requesting_permission'
+  | 'starting'
+  | 'listening'
+  | 'capturing'
+  | 'settling'
+  | 'committing'
+  | 'processing'
+  | 'speaking'
+  | 'restarting'
+  | 'error';
+
+type VoiceRuntimeSnapshot = {
+  phase: VoiceRuntimePhase;
+  recentEvent: string;
+  queue: VoiceCommandQueueSnapshot;
+  processing: boolean;
+  speaking: boolean;
+  waitingConfirmation: boolean;
+  lastError: string | null;
+  updatedAt: number;
+};
+
+type PendingConfirmationState = {
+  commandId: string;
+  transcript: VoiceTranscript;
+  message: string;
+  createdAt: number;
+  expiresAt: number;
+};
+
+type TestSpeechEvent = {
+  text?: string;
+  confidence?: number;
+  isFinal?: boolean;
+  source?: VoiceTranscript['source'];
+};
+
 declare global {
   interface Window {
     __speak2drawTest?: {
@@ -93,6 +143,9 @@ declare global {
       getAiStatus: () => AiResolutionStatus;
       getClarification: () => ClarificationState | null;
       getVoiceDiagnostics: () => SpeechDiagnostics;
+      getVoiceRuntime: () => VoiceRuntimeSnapshot;
+      getCommandQueue: () => VoiceCommandQueueSnapshot;
+      emitSpeechEvent: (event: TestSpeechEvent) => Promise<void>;
       getSettings: () => PublicSettingsSnapshot;
       getWorkbenchLayout: () => WorkbenchLayout;
     };
@@ -122,6 +175,26 @@ export const App = () => {
   const clarificationRef = useRef<ClarificationState | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const voiceDiagnosticsRef = useRef<SpeechDiagnostics | null>(null);
+  const commandQueueRef = useRef(new VoiceCommandQueue());
+  const processingQueueRef = useRef(false);
+  const [commandQueueSnapshot, setCommandQueueSnapshot] = useState<VoiceCommandQueueSnapshot>(() => commandQueueRef.current.snapshot());
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmationState | null>(null);
+  const pendingConfirmationRef = useRef<PendingConfirmationState | null>(null);
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
+  const voiceSpeakingRef = useRef(false);
+  const lastSpokenTextRef = useRef<string | null>(null);
+  const lastSpokenAtRef = useRef(0);
+  const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeSnapshot>(() => ({
+    phase: 'idle',
+    recentEvent: '等待语音输入。',
+    queue: commandQueueRef.current.snapshot(),
+    processing: false,
+    speaking: false,
+    waitingConfirmation: false,
+    lastError: null,
+    updatedAt: 0
+  }));
+  const voiceRuntimeRef = useRef(voiceRuntime);
   const [settings, setSettingsState] = useState<AppSettings>(() => loadAppSettings());
   const settingsRef = useRef(settings);
   const sessionApiKeyRef = useRef('');
@@ -226,9 +299,163 @@ export const App = () => {
     return message;
   }, [getAiRequestOptions, pushWorkflowEvent]);
 
-  const handleTranscript = useCallback(
-    async (transcript: VoiceTranscript) => {
+  const refreshCommandQueueSnapshot = useCallback(() => {
+    const snapshot = commandQueueRef.current.snapshot();
+    setCommandQueueSnapshot(snapshot);
+    return snapshot;
+  }, []);
+
+  const updateVoiceRuntime = useCallback(
+    (updates: Partial<Omit<VoiceRuntimeSnapshot, 'queue' | 'updatedAt' | 'processing' | 'speaking' | 'waitingConfirmation'>> = {}) => {
+      const next: VoiceRuntimeSnapshot = {
+        ...voiceRuntimeRef.current,
+        ...updates,
+        queue: commandQueueRef.current.snapshot(),
+        processing: processingQueueRef.current,
+        speaking: voiceSpeakingRef.current,
+        waitingConfirmation: Boolean(pendingConfirmationRef.current),
+        updatedAt: performance.now()
+      };
+      voiceRuntimeRef.current = next;
+      setVoiceRuntime(next);
+      setCommandQueueSnapshot(next.queue);
+      return next;
+    },
+    []
+  );
+
+  const clearPendingConfirmation = useCallback(() => {
+    pendingConfirmationRef.current = null;
+    setPendingConfirmation(null);
+    updateVoiceRuntime();
+  }, [updateVoiceRuntime]);
+
+  const speakFeedback = useCallback(
+    async (message: string) => {
+      lastSpokenTextRef.current = message;
+      lastSpokenAtRef.current = performance.now();
+      voiceSpeakingRef.current = true;
+      setVoiceSpeaking(true);
+      updateVoiceRuntime({ phase: 'speaking', recentEvent: message });
+      try {
+        if (isE2eMode()) {
+          await Promise.resolve();
+        } else {
+          await speak(message);
+        }
+      } finally {
+        voiceSpeakingRef.current = false;
+        setVoiceSpeaking(false);
+        updateVoiceRuntime({ phase: processingQueueRef.current ? 'processing' : 'restarting', recentEvent: '语音反馈结束，恢复监听。' });
+      }
+    },
+    [updateVoiceRuntime]
+  );
+
+  const publishResult = useCallback(
+    async (transcript: VoiceTranscript, result: ExecutionResult, source: string, eventTitle?: string) => {
+      setLastTranscript(transcript.text);
+      setScene(result.scene);
+      sceneRef.current = result.scene;
+      setLastResult(result);
+      setHistory((items) => [
+        {
+          transcript: transcript.text,
+          message: result.message,
+          source,
+          ok: result.ok,
+          time: formatClockTime()
+        },
+        ...items
+      ].slice(0, 8));
+      pushWorkflowEvent(eventTitle ?? (result.ok ? '画布已更新' : '需要补充信息'), result.message, result.ok ? 'ok' : 'warning');
+      await speakFeedback(result.message);
+      if (result.exportSvg) downloadSvg(result.exportSvg);
+    },
+    [pushWorkflowEvent, speakFeedback]
+  );
+
+  const buildUiResult = useCallback((message: string, sceneSnapshot: SceneState, transcript: VoiceTranscript, ok = true): ExecutionResult => ({
+    ok,
+    message,
+    scene: sceneSnapshot,
+    commandsExecuted: 0,
+    latencyMs: Math.max(0, Math.round(performance.now() - transcript.receivedAt))
+  }), []);
+
+  const executeVoiceCommand = useCallback(
+    async (item: VoiceCommandItem, options: { skipConfirmation?: boolean } = {}) => {
+      const transcript = item.transcript;
       const currentScene = sceneRef.current;
+      updateVoiceRuntime({ phase: 'processing', recentEvent: `正在处理：“${transcript.text}”`, lastError: null });
+
+      const pending = pendingConfirmationRef.current;
+      if (!options.skipConfirmation && pending) {
+        if (performance.now() > pending.expiresAt) {
+          clearPendingConfirmation();
+          await publishResult(
+            transcript,
+            buildUiResult('上一条确认已超时，请重新说出要执行的指令。', currentScene, transcript, false),
+            '安全确认',
+            '确认已超时'
+          );
+          return;
+        }
+
+        if (isConfirmationAcceptText(transcript.text)) {
+          clearPendingConfirmation();
+          const confirmedItem: VoiceCommandItem = {
+            ...item,
+            transcript: {
+              ...pending.transcript,
+              confidence: Math.max(pending.transcript.confidence, 0.99),
+              isFinal: true,
+              source: 'final',
+              receivedAt: transcript.receivedAt
+            }
+          };
+          pushWorkflowEvent('危险操作已确认', pending.message, 'warning');
+          await executeVoiceCommand(confirmedItem, { skipConfirmation: true });
+          return;
+        }
+
+        if (isConfirmationCancelText(transcript.text)) {
+          clearPendingConfirmation();
+          await publishResult(
+            transcript,
+            buildUiResult('已取消上一条危险操作，画布没有变化。', currentScene, transcript, true),
+            '安全确认',
+            '危险操作已取消'
+          );
+          return;
+        }
+
+        if (!looksLikeStandaloneCommand(transcript.text)) {
+          await publishResult(
+            transcript,
+            buildUiResult('请说“确认”执行上一条危险操作，或说“取消”放弃。', currentScene, transcript, false),
+            '安全确认',
+            '等待确认'
+          );
+          return;
+        }
+
+        clearPendingConfirmation();
+        pushWorkflowEvent('已放弃等待确认', '收到新的完整指令，上一条危险操作未执行。', 'info');
+      }
+
+      if (isClarificationCancelText(transcript.text)) {
+        clarificationRef.current = null;
+        setClarification(null);
+        await publishResult(
+          transcript,
+          buildUiResult('已取消上一轮补充问题，可以直接说新的绘图指令。', currentScene, transcript, true),
+          '澄清控制',
+          '澄清已取消'
+        );
+        return;
+      }
+
       const settingsCommand = detectSettingsCommand(transcript.text);
       if (settingsCommand) {
         let message = '已更新设置。';
@@ -259,89 +486,43 @@ export const App = () => {
           message = await runAiConnectionTest();
         }
 
-        const result: ExecutionResult = {
-          ok: !message.includes('失败'),
-          message,
-          scene: currentScene,
-          commandsExecuted: 0,
-          latencyMs: Math.max(0, Math.round(performance.now() - transcript.receivedAt))
-        };
-        setLastTranscript(transcript.text);
-        setLastResult(result);
-        setHistory((items) => [
-          {
-            transcript: transcript.text,
-            message,
-            source: '设置',
-            ok: result.ok,
-            time: formatClockTime()
-          },
-          ...items
-        ].slice(0, 8));
-        pushWorkflowEvent('设置已处理', message, result.ok ? 'ok' : 'warning');
-        speak(message);
+        await publishResult(transcript, buildUiResult(message, currentScene, transcript, !message.includes('失败')), '设置', '设置已处理');
         return;
       }
 
       const layoutCommand = detectLayoutCommand(transcript.text);
       if (layoutCommand) {
         const message = workbenchLayoutMessage(layoutCommand);
-        const result: ExecutionResult = {
-          ok: true,
-          message,
-          scene: currentScene,
-          commandsExecuted: 0,
-          latencyMs: Math.max(0, Math.round(performance.now() - transcript.receivedAt))
-        };
         setWorkbenchLayout(layoutCommand);
-        setLastTranscript(transcript.text);
-        setLastResult(result);
-        setHistory((items) => [
-          {
-            transcript: transcript.text,
-            message,
-            source: '界面布局',
-            ok: true,
-            time: formatClockTime()
-          },
-          ...items
-        ].slice(0, 8));
-        pushWorkflowEvent('布局已切换', message, 'ok');
-        speak(message);
+        await publishResult(transcript, buildUiResult(message, currentScene, transcript), '界面布局', '布局已切换');
         return;
       }
 
       const panelCommand = detectStatusPanelCommand(transcript.text);
       if (panelCommand) {
         const message = panelCommand === 'open' ? '已打开状态信息。' : '已关闭状态信息。';
-        const result: ExecutionResult = {
-          ok: true,
-          message,
-          scene: currentScene,
-          commandsExecuted: 0,
-          latencyMs: Math.max(0, Math.round(performance.now() - transcript.receivedAt))
-        };
         setStatusPanelOpen(panelCommand === 'open');
-        setLastTranscript(transcript.text);
-        setLastResult(result);
-        setHistory((items) => [
-          {
-            transcript: transcript.text,
-            message,
-            source: '界面控制',
-            ok: true,
-            time: formatClockTime()
-          },
-          ...items
-        ].slice(0, 8));
-        pushWorkflowEvent(panelCommand === 'open' ? '状态信息已打开' : '状态信息已关闭', transcript.text, 'ok');
-        speak(message);
+        await publishResult(transcript, buildUiResult(message, currentScene, transcript), '界面控制', panelCommand === 'open' ? '状态信息已打开' : '状态信息已关闭');
         return;
       }
 
-      const activeClarification = clarificationRef.current;
+      let activeClarification = clarificationRef.current;
+      if (activeClarification && performance.now() > activeClarification.expiresAt) {
+        activeClarification = null;
+        clarificationRef.current = null;
+        setClarification(null);
+        pushWorkflowEvent('澄清已过期', '上一轮补充问题已超时，当前语音会按新指令处理。', 'info');
+      }
       const localIntent = parseIntent(transcript);
+      if (activeClarification && looksLikeStandaloneCommand(transcript.text) && !shouldUseAiIntentFallback(localIntent, planCommands(localIntent, currentScene), transcript)) {
+        activeClarification = null;
+        clarificationRef.current = null;
+        setClarification(null);
+        pushWorkflowEvent('已切换到新指令', '检测到完整新指令，已清除上一轮补充问题。', 'info');
+      }
+
       let plan = planCommands(localIntent, currentScene);
+      let executionScene = currentScene;
       let aiHistoryLabel = '本地规则';
       const creativeAiCandidate = isCreativeAiCandidate(transcript.text, localIntent.reason);
 
@@ -354,13 +535,15 @@ export const App = () => {
         });
         const aiResult = await resolveAiIntent(
           transcript,
-          currentScene,
+          executionScene,
           activeClarification ? activeClarification.question : plan.message ?? localIntent.reason,
           activeClarification ?? undefined,
           getAiRequestOptions()
         );
         if (aiResult.ok) {
-          plan = planCommands(aiResult.intent, currentScene);
+          const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
+          executionScene = latestScene;
+          plan = planCommands(aiResult.intent, latestScene);
           aiHistoryLabel = 'DeepSeek';
           setAiStatus({
             state: 'used',
@@ -375,7 +558,9 @@ export const App = () => {
           if (creativeAiCandidate) {
             const localCreativeIntent = createLocalCreativeAssetIntent(transcript.text);
             if (localCreativeIntent) {
-              plan = planCommands(localCreativeIntent, currentScene);
+              const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
+              executionScene = latestScene;
+              plan = planCommands(localCreativeIntent, latestScene);
               aiHistoryLabel = '本地素材配方';
               setAiStatus({
                 state: 'fallback',
@@ -398,14 +583,32 @@ export const App = () => {
         });
       }
 
-      const result = executeDrawingCommands(currentScene, plan.commands, transcript, plan);
-      pushWorkflowEvent(result.ok ? '画布已更新' : '需要补充信息', result.message, result.ok ? 'ok' : 'warning');
+      if (!options.skipConfirmation && requiresVoiceConfirmation(transcript, plan.commands, executionScene)) {
+        const message = confirmationMessageForCommands(plan.commands, executionScene);
+        const nextConfirmation: PendingConfirmationState = {
+          commandId: item.commandId,
+          transcript,
+          message,
+          createdAt: performance.now(),
+          expiresAt: performance.now() + CONFIRMATION_TTL_MS
+        };
+        pendingConfirmationRef.current = nextConfirmation;
+        setPendingConfirmation(nextConfirmation);
+        updateVoiceRuntime({ phase: 'processing', recentEvent: message });
+        await publishResult(transcript, buildUiResult(message, currentScene, transcript, false), '安全确认', '等待危险操作确认');
+        return;
+      }
+
+      const result = executeDrawingCommands(executionScene, plan.commands, transcript, plan);
       if (result.needsClarification) {
+        const now = performance.now();
         const nextClarification: ClarificationState = {
           waiting: true,
           originalTranscript: activeClarification?.originalTranscript ?? transcript.text,
           question: result.message,
-          reason: plan.message ?? localIntent.reason
+          reason: plan.message ?? localIntent.reason,
+          createdAt: now,
+          expiresAt: now + CLARIFICATION_TTL_MS
         };
         setClarification(nextClarification);
         clarificationRef.current = nextClarification;
@@ -413,24 +616,69 @@ export const App = () => {
         setClarification(null);
         clarificationRef.current = null;
       }
-      setLastTranscript(transcript.text);
-      setScene(result.scene);
-      sceneRef.current = result.scene;
-      setLastResult(result);
-      setHistory((items) => [
-        {
-          transcript: transcript.text,
-          message: result.message,
-          source: aiHistoryLabel,
-          ok: result.ok,
-          time: formatClockTime()
-        },
-        ...items
-      ].slice(0, 8));
-      speak(result.message);
-      if (result.exportSvg) downloadSvg(result.exportSvg);
+      await publishResult(transcript, result, aiHistoryLabel);
     },
-    [getAiRequestOptions, pushWorkflowEvent, runAiConnectionTest, setSettings, setVoicePolicyMode]
+    [
+      buildUiResult,
+      clearPendingConfirmation,
+      getAiRequestOptions,
+      publishResult,
+      pushWorkflowEvent,
+      runAiConnectionTest,
+      setSettings,
+      setVoicePolicyMode,
+      updateVoiceRuntime
+    ]
+  );
+
+  const processCommandQueue = useCallback(async () => {
+    if (processingQueueRef.current) return;
+    processingQueueRef.current = true;
+    updateVoiceRuntime({ phase: 'processing', recentEvent: '开始处理语音队列。' });
+    try {
+      let item = commandQueueRef.current.takeNext();
+      refreshCommandQueueSnapshot();
+      while (item) {
+        try {
+          await executeVoiceCommand(item);
+          commandQueueRef.current.markCompleted(item.commandId);
+        } catch (error) {
+          commandQueueRef.current.markFailed(item.commandId, error);
+          const message = error instanceof Error ? error.message : '语音指令执行失败。';
+          updateVoiceRuntime({ phase: 'error', recentEvent: message, lastError: message });
+        }
+        item = commandQueueRef.current.takeNext();
+        refreshCommandQueueSnapshot();
+      }
+    } finally {
+      processingQueueRef.current = false;
+      updateVoiceRuntime({ phase: voiceSpeakingRef.current ? 'speaking' : 'idle', recentEvent: '语音队列已处理完。' });
+    }
+  }, [executeVoiceCommand, refreshCommandQueueSnapshot, updateVoiceRuntime]);
+
+  const handleTranscript = useCallback(
+    async (transcript: VoiceTranscript) => {
+      const normalizedTranscript = normalizeIncomingTranscript(transcript);
+      if (isLikelyEcho(normalizedTranscript.text, lastSpokenTextRef.current) && performance.now() - lastSpokenAtRef.current < ECHO_GUARD_MS) {
+        pushWorkflowEvent('已忽略系统回声', normalizedTranscript.text, 'info');
+        updateVoiceRuntime({ phase: 'speaking', recentEvent: '已过滤系统朗读回声。' });
+        return;
+      }
+
+      const queuedBefore = commandQueueRef.current.length;
+      const { done } = commandQueueRef.current.enqueue(normalizedTranscript, sceneRef.current.revision);
+      refreshCommandQueueSnapshot();
+      updateVoiceRuntime({
+        phase: processingQueueRef.current ? 'processing' : 'committing',
+        recentEvent: queuedBefore || processingQueueRef.current ? `已排队：“${normalizedTranscript.text}”` : `已收到：“${normalizedTranscript.text}”`
+      });
+      if (queuedBefore || processingQueueRef.current) {
+        pushWorkflowEvent('语音指令已排队', normalizedTranscript.text, 'info');
+      }
+      void processCommandQueue();
+      await done;
+    },
+    [processCommandQueue, pushWorkflowEvent, refreshCommandQueueSnapshot, updateVoiceRuntime]
   );
 
   useEffect(() => {
@@ -441,12 +689,29 @@ export const App = () => {
           text,
           confidence,
           receivedAt: performance.now(),
-          isFinal: true
+          isFinal: true,
+          source: 'manual-test',
+          utteranceId: `manual-${Date.now()}`,
+          startedAt: performance.now(),
+          committedAt: performance.now()
         }),
       getScene: () => sceneRef.current,
       getAiStatus: () => aiStatusRef.current,
       getClarification: () => clarificationRef.current,
       getVoiceDiagnostics: () => voiceDiagnosticsRef.current ?? EMPTY_VOICE_DIAGNOSTICS,
+      getVoiceRuntime: () => voiceRuntimeRef.current,
+      getCommandQueue: () => commandQueueRef.current.snapshot(),
+      emitSpeechEvent: (event) =>
+        handleTranscript({
+          text: event.text ?? '',
+          confidence: event.confidence ?? 0.8,
+          receivedAt: performance.now(),
+          isFinal: event.isFinal ?? event.source !== 'interim-fallback',
+          source: event.source ?? (event.isFinal === false ? 'interim-fallback' : 'final'),
+          utteranceId: `test-${Date.now()}`,
+          startedAt: performance.now(),
+          committedAt: performance.now()
+        }),
       getSettings: () => toPublicSettingsSnapshot(settingsRef.current, sessionKeyConfigured),
       getWorkbenchLayout: () => workbenchLayoutRef.current
     };
@@ -456,12 +721,33 @@ export const App = () => {
     };
   }, [handleTranscript, sessionKeyConfigured]);
 
-  const { status, error, activity, diagnostics, start, stop } = useSpeechInput(handleTranscript, { policyMode: voicePolicyMode });
+  const shouldIgnoreTranscript = useCallback(
+    (transcript: VoiceTranscript) =>
+      isLikelyEcho(transcript.text, lastSpokenTextRef.current) && performance.now() - lastSpokenAtRef.current < ECHO_GUARD_MS,
+    []
+  );
+
+  const { status, error, activity, diagnostics, start, stop } = useSpeechInput(handleTranscript, {
+    policyMode: voicePolicyMode,
+    suspended: voiceSpeaking,
+    shouldIgnoreTranscript
+  });
   const selected = useMemo(() => scene.objects.find((object) => object.id === scene.selectedId), [scene.objects, scene.selectedId]);
 
   useEffect(() => {
     voiceDiagnosticsRef.current = diagnostics;
-  }, [diagnostics]);
+    const diagnosticPhase = runtimePhaseFromDiagnostics(diagnostics);
+    const phase = voiceSpeakingRef.current ? 'speaking' : processingQueueRef.current ? 'processing' : diagnosticPhase;
+    const recentEvent =
+      processingQueueRef.current && diagnosticPhase !== 'error'
+        ? voiceRuntimeRef.current.recentEvent
+        : diagnostics.reason ?? diagnostics.finalText ?? diagnostics.interimText ?? activity;
+    updateVoiceRuntime({
+      phase,
+      recentEvent,
+      lastError: diagnostics.phase === 'error' || diagnostics.phase === 'no_speech' ? diagnostics.reason : null
+    });
+  }, [activity, diagnostics, updateVoiceRuntime]);
 
   useEffect(() => {
     if (!toastEvent) return;
@@ -626,6 +912,8 @@ export const App = () => {
             lastResult={lastResult}
             lastTranscript={lastTranscript}
             clarification={clarification}
+            voiceRuntime={voiceRuntime}
+            pendingConfirmation={pendingConfirmation}
             history={history}
             workflowEvents={workflowEvents}
             micTestSample={micTestSample}
@@ -874,9 +1162,6 @@ const VoiceTopDeck = ({
 
   return (
     <header className={`voice-command-bar ${status}`}>
-      <div className="floating-mic" aria-hidden="true">
-        <Mic size={25} />
-      </div>
       <div className="top-title">
         <h1>纯语音绘图工作台</h1>
         <p>Speak2Draw-Agent-Studio</p>
@@ -1927,6 +2212,58 @@ const WorkflowToast = ({ event }: { event: WorkflowEvent }) => (
   </div>
 );
 
+const VoiceRuntimeBlock = ({
+  runtime,
+  pendingConfirmation
+}: {
+  runtime: VoiceRuntimeSnapshot;
+  pendingConfirmation: PendingConfirmationState | null;
+}) => {
+  const activeCommand = runtime.queue.activeCommand;
+  const pendingCommands = runtime.queue.pendingCommands.slice(0, 3);
+  return (
+    <section className="overlay-section voice-runtime-block" aria-label="语音运行时">
+      <div className="section-label">
+        <BrainCircuit size={16} />
+        <h2>语音运行时</h2>
+      </div>
+      <dl className="runtime-grid">
+        <div>
+          <dt>阶段</dt>
+          <dd>{runtime.phase}</dd>
+        </div>
+        <div>
+          <dt>当前</dt>
+          <dd>{activeCommand?.text ?? '无正在处理指令'}</dd>
+        </div>
+        <div>
+          <dt>队列</dt>
+          <dd>{runtime.queue.pendingCount ? `${runtime.queue.pendingCount} 条待执行` : '无排队'}</dd>
+        </div>
+        <div>
+          <dt>朗读</dt>
+          <dd>{runtime.speaking ? '语音反馈中' : '未朗读'}</dd>
+        </div>
+      </dl>
+      {pendingConfirmation ? (
+        <p className="runtime-warning">{pendingConfirmation.message}</p>
+      ) : (
+        <p className="runtime-note">{runtime.recentEvent || '等待下一条语音。'}</p>
+      )}
+      {pendingCommands.length ? (
+        <ol className="runtime-queue">
+          {pendingCommands.map((command) => (
+            <li key={command.commandId}>
+              <span>{command.source ?? 'voice'}</span>
+              <strong>{command.text}</strong>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  );
+};
+
 const StatusOverlay = ({
   status,
   diagnostics,
@@ -1938,6 +2275,8 @@ const StatusOverlay = ({
   lastResult,
   lastTranscript,
   clarification,
+  voiceRuntime,
+  pendingConfirmation,
   history,
   workflowEvents,
   micTestSample,
@@ -1955,6 +2294,8 @@ const StatusOverlay = ({
   lastResult: ExecutionResult | null;
   lastTranscript: string;
   clarification: ClarificationState | null;
+  voiceRuntime: VoiceRuntimeSnapshot;
+  pendingConfirmation: PendingConfirmationState | null;
   history: HistoryItem[];
   workflowEvents: WorkflowEvent[];
   micTestSample: MicrophoneInputSample | null;
@@ -2022,6 +2363,7 @@ const StatusOverlay = ({
           </p>
         </section>
 
+        <VoiceRuntimeBlock runtime={voiceRuntime} pendingConfirmation={pendingConfirmation} />
         <AiStatusBlock status={aiStatus} voiceStatus={status} objectCount={objectCount} selected={selected} selection={selection} lastResult={lastResult} />
         <ExecutionPathBlock aiStatus={aiStatus} lastResult={lastResult} />
         <ClarificationFlowBlock clarification={clarification} lastTranscript={lastTranscript} selected={selected} />
@@ -2315,6 +2657,79 @@ const EMPTY_VOICE_DIAGNOSTICS: SpeechDiagnostics = {
   finalText: null,
   reason: null,
   updatedAt: 0
+};
+
+const CONFIRMATION_TTL_MS = 9000;
+const CLARIFICATION_TTL_MS = 18000;
+const ECHO_GUARD_MS = 6500;
+
+const normalizeIncomingTranscript = (transcript: VoiceTranscript): VoiceTranscript => {
+  const now = performance.now();
+  const isFinal = transcript.isFinal !== false;
+  return {
+    ...transcript,
+    text: transcript.text.trim(),
+    isFinal,
+    source: transcript.source ?? (isFinal ? 'final' : 'interim-fallback'),
+    utteranceId: transcript.utteranceId ?? `manual-${Date.now()}`,
+    startedAt: transcript.startedAt ?? transcript.receivedAt,
+    committedAt: transcript.committedAt ?? now
+  };
+};
+
+const runtimePhaseFromDiagnostics = (diagnostics: SpeechDiagnostics): VoiceRuntimePhase => {
+  switch (diagnostics.phase) {
+    case 'permission_requested':
+      return 'requesting_permission';
+    case 'starting':
+    case 'permission_granted':
+      return 'starting';
+    case 'audio_started':
+    case 'sound_started':
+    case 'speech_started':
+      return 'capturing';
+    case 'speech_ended':
+    case 'interim_result':
+      return 'settling';
+    case 'final_result':
+    case 'fallback_commit':
+      return 'committing';
+    case 'restarting':
+      return 'restarting';
+    case 'error':
+    case 'no_speech':
+      return 'error';
+    case 'speaking':
+      return 'speaking';
+    case 'listening':
+      return 'listening';
+    default:
+      return 'idle';
+  }
+};
+
+const requiresVoiceConfirmation = (transcript: VoiceTranscript, commands: DrawingCommand[], scene: SceneState) =>
+  isRiskyTranscriptSource(transcript) && commands.some((command) => isRiskyCommand(command, scene));
+
+const isRiskyCommand = (command: DrawingCommand, scene: SceneState) => {
+  if (command.type === 'delete_object' || command.type === 'clear_canvas' || command.type === 'undo' || command.type === 'redo') return true;
+  if (command.type === 'move_object' || command.type === 'resize_object' || command.type === 'update_object') {
+    const targets = findObjects(scene.objects, command.selector, scene.selectedId, scene.selection);
+    return targets.length > 1 || Boolean(targets[0]?.groupId);
+  }
+  return false;
+};
+
+const confirmationMessageForCommands = (commands: DrawingCommand[], scene: SceneState) => {
+  if (commands.some((command) => command.type === 'clear_canvas')) return '我听到要清空画布。请说“确认”执行，或说“取消”放弃。';
+  if (commands.some((command) => command.type === 'undo')) return '我听到要撤销上一步。请说“确认”执行，或说“取消”放弃。';
+  if (commands.some((command) => command.type === 'redo')) return '我听到要重做上一步。请说“确认”执行，或说“取消”放弃。';
+  const deleteCommand = commands.find((command) => command.type === 'delete_object');
+  if (deleteCommand) {
+    const target = findObjects(scene.objects, deleteCommand.selector, scene.selectedId, scene.selection)[0];
+    return `我听到要删除${target?.partName ?? target?.groupName ?? target?.name ?? '目标图形'}。请说“确认”执行，或说“取消”放弃。`;
+  }
+  return '这条语音来自中间识别且会修改多个对象。请说“确认”执行，或说“取消”放弃。';
 };
 
 const voiceStatusLabel = (status: string) => {

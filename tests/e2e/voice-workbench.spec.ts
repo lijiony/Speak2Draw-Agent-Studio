@@ -8,6 +8,24 @@ declare global {
       getAiStatus: () => { state: string; message: string };
       getClarification: () => { originalTranscript: string; question: string } | null;
       getVoiceDiagnostics: () => { policyMode: string; phase: string; interimText: string | null; finalText: string | null };
+      getVoiceRuntime: () => {
+        phase: string;
+        recentEvent: string;
+        processing: boolean;
+        speaking: boolean;
+        waitingConfirmation: boolean;
+        queue: {
+          activeCommand: { text: string; source?: string } | null;
+          pendingCommands: Array<{ text: string; source?: string }>;
+          pendingCount: number;
+        };
+      };
+      getCommandQueue: () => {
+        activeCommand: { text: string; source?: string } | null;
+        pendingCommands: Array<{ text: string; source?: string }>;
+        pendingCount: number;
+      };
+      emitSpeechEvent: (event: { text?: string; confidence?: number; isFinal?: boolean; source?: 'final' | 'interim-fallback' | 'manual-test' }) => Promise<void>;
       getWorkbenchLayout: () => 'focus' | 'side-inspector' | 'bottom-inspector';
       getSettings: () => { aiModel: string; aiBaseUrl: string; sessionKeyConfigured: boolean; voicePolicyMode: string; aiFallbackEnabled: boolean };
     };
@@ -98,6 +116,77 @@ test('语音启动长时间无回调时会恢复为可重试错误', async ({ pa
   expect(consoleErrors).toEqual([]);
 });
 
+test('浏览器只返回中间识别文本并结束时会执行语音指令', async ({ page }) => {
+  const consoleErrors = collectConsoleErrors(page);
+
+  await page.addInitScript(() => {
+    let recognitionStartCount = 0;
+    const recognitionResults = (text: string) =>
+      [
+        {
+          isFinal: false,
+          length: 1,
+          0: { transcript: text, confidence: 0.82 },
+          item: () => ({ transcript: text, confidence: 0.82 })
+        }
+      ] as unknown as SpeechRecognitionResultList;
+
+    class MockSpeechRecognition {
+      continuous = false;
+      interimResults = false;
+      lang = '';
+      onaudiostart: ((event: Event) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onresult: ((event: SpeechRecognitionEvent) => void) | null = null;
+      onspeechstart: ((event: Event) => void) | null = null;
+      onstart: ((event: Event) => void) | null = null;
+
+      start() {
+        recognitionStartCount += 1;
+        window.setTimeout(() => {
+          this.onstart?.(new Event('start'));
+          this.onaudiostart?.(new Event('audiostart'));
+          if (recognitionStartCount !== 1) return;
+
+          this.onspeechstart?.(new Event('speechstart'));
+          this.onresult?.({ results: recognitionResults('画一个红色圆形') } as SpeechRecognitionEvent);
+          this.onend?.(new Event('end'));
+        }, 0);
+      }
+
+      stop() {
+        this.onend?.(new Event('end'));
+      }
+    }
+
+    Object.defineProperty(window, 'SpeechRecognition', {
+      configurable: true,
+      value: MockSpeechRecognition
+    });
+    Object.defineProperty(window, 'webkitSpeechRecognition', {
+      configurable: true,
+      value: undefined
+    });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: async () => ({
+          getTracks: () => [{ stop: () => undefined }]
+        })
+      }
+    });
+  });
+
+  await page.goto('/?e2e=1');
+  await expect(page.getByRole('heading', { name: '纯语音绘图工作台' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Boolean(window.__speak2drawTest))).toBe(true);
+
+  await page.getByRole('button', { name: '启动语音监听' }).click();
+  await expect(systemFeedback(page)).toContainText('已更新画布', { timeout: 5000 });
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(1);
+  expect(consoleErrors).toEqual([]);
+});
+
 test('语音文本可以驱动复杂绘图和按名称编辑', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
   expect(await page.evaluate(() => window.__speak2drawTest?.getVoiceDiagnostics())).toMatchObject({
@@ -173,6 +262,116 @@ test('删除帽子局部不会删除整只小猫', async ({ page }) => {
   expect(objects.some((object) => object.partName === '帽子')).toBe(false);
   expect(objects.some((object) => object.name === '小猫脸')).toBe(true);
   expect(objects.every((object) => object.groupName === '戴帽子的小猫')).toBe(true);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('中间识别的危险删除必须语音确认后才执行', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false,
+        provider: 'local',
+        reason: '测试环境使用本地素材配方。'
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一个戴帽子的小猫');
+  await expect.poll(() => hasPart(page, '帽子')).toBe(true);
+
+  await emitSpeechText(page, '把帽子删掉', { source: 'interim-fallback', isFinal: false, confidence: 0.68 });
+  await expect(systemFeedback(page)).toContainText('请说“确认”执行');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getVoiceRuntime().waitingConfirmation)).toBe(true);
+  expect(await hasPart(page, '帽子')).toBe(true);
+
+  await emitSpeechText(page, '取消', { source: 'final', confidence: 0.99 });
+  await expect(systemFeedback(page)).toContainText('已取消上一条危险操作');
+  expect(await hasPart(page, '帽子')).toBe(true);
+
+  await emitSpeechText(page, '把帽子删掉', { source: 'interim-fallback', isFinal: false, confidence: 0.68 });
+  await emitSpeechText(page, '确认', { source: 'final', confidence: 0.99 });
+  await expect(systemFeedback(page)).toContainText('已删除帽子');
+  await expect.poll(() => hasPart(page, '帽子')).toBe(false);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.some((object) => object.name === '小猫脸'))).toBe(true);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('AI 慢请求期间后续语音会排队并按顺序执行', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+  const aiRequests: string[] = [];
+  let releaseAi!: () => void;
+  const aiGate = new Promise<void>((resolve) => {
+    releaseAi = resolve;
+  });
+
+  await page.route('**/api/ai/intent', async (route) => {
+    const requestBody = route.request().postDataJSON() as { transcript: string };
+    aiRequests.push(requestBody.transcript);
+
+    if (requestBody.transcript.includes('戴帽子的小猫')) {
+      await aiGate;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          provider: 'deepseek',
+          model: 'deepseek-v4-flash',
+          intent: {
+            type: 'create_asset_recipe',
+            name: '戴帽子的小猫',
+            recipe: [
+              { shape: 'circle', name: '小猫脸', partName: '脸', color: '#f9fafb', position: { x: 370, y: 230 }, width: 160, height: 140 },
+              { shape: 'triangle', name: '小猫左耳', partName: '耳朵', color: '#f9fafb', position: { x: 375, y: 190 }, width: 60, height: 70 },
+              { shape: 'triangle', name: '小猫右耳', partName: '耳朵', color: '#f9fafb', position: { x: 470, y: 190 }, width: 60, height: 70 },
+              { shape: 'rectangle', name: '红色帽子', partName: '帽子', color: '#ef4444', position: { x: 405, y: 185 }, width: 100, height: 36 }
+            ]
+          }
+        })
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false,
+        provider: 'local',
+        reason: '本条应由本地规则处理。'
+      })
+    });
+  });
+
+  await queueSpeechText(page, '画一个戴帽子的小猫');
+  await expect.poll(() => aiRequests.length).toBe(1);
+  await queueSpeechText(page, '把帽子删掉');
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getCommandQueue().pendingCount ?? 0)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getVoiceRuntime().processing ?? false)).toBe(true);
+
+  releaseAi();
+  await expect.poll(() => hasPart(page, '帽子')).toBe(false);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.some((object) => object.name === '小猫脸'))).toBe(true);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getCommandQueue().pendingCount ?? 0)).toBe(0);
+  expect(aiRequests).toEqual(['画一个戴帽子的小猫']);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('系统语音反馈回声不会再次触发绘图命令', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个红色圆形');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(1);
+  await submitVoiceText(page, '撤销');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(0);
+
+  await emitSpeechText(page, '已撤销上一步。', { source: 'final', confidence: 0.99 });
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(0);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getVoiceRuntime().recentEvent ?? '')).toContain('回声');
   expect(consoleErrors).toEqual([]);
 });
 
@@ -669,6 +868,7 @@ test('语音可以打开和关闭状态信息浮层', async ({ page }) => {
   await submitVoiceText(page, '打开状态信息');
   await expect(page.getByRole('dialog', { name: '状态信息' })).toBeVisible();
   await expect(page.getByRole('dialog', { name: '状态信息' }).getByText('工作流运行状态')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '状态信息' }).getByText('语音运行时')).toBeVisible();
   await expect(systemFeedback(page)).toContainText('已打开状态信息。');
 
   await submitVoiceText(page, '关闭状态信息');
@@ -803,6 +1003,41 @@ const submitVoiceText = async (page: Page, text: string) => {
     await window.__speak2drawTest?.submitTranscript(value);
   }, text);
 };
+
+const emitSpeechText = async (
+  page: Page,
+  text: string,
+  options: { confidence?: number; isFinal?: boolean; source?: 'final' | 'interim-fallback' | 'manual-test' } = {}
+) => {
+  await page.evaluate(
+    async ({ value, eventOptions }) => {
+      await window.__speak2drawTest?.emitSpeechEvent({
+        text: value,
+        ...eventOptions
+      });
+    },
+    { value: text, eventOptions: options }
+  );
+};
+
+const queueSpeechText = async (
+  page: Page,
+  text: string,
+  options: { confidence?: number; isFinal?: boolean; source?: 'final' | 'interim-fallback' | 'manual-test' } = {}
+) => {
+  await page.evaluate(
+    ({ value, eventOptions }) => {
+      void window.__speak2drawTest?.emitSpeechEvent({
+        text: value,
+        ...eventOptions
+      });
+    },
+    { value: text, eventOptions: options }
+  );
+};
+
+const hasPart = async (page: Page, partName: string) =>
+  page.evaluate((target) => window.__speak2drawTest?.getScene().objects.some((object) => object.partName === target) ?? false, partName);
 
 const systemFeedback = (page: Page) =>
   page.locator('section.info-block').filter({ hasText: '系统反馈' }).locator('p');

@@ -85,8 +85,8 @@ export const isAiIntentPayload = (payload: unknown): payload is AiIntentRequestP
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 const safeTimeoutMs = (value?: string) => {
-  const parsed = Number(value || 8000);
-  if (!Number.isFinite(parsed)) return 8000;
+  const parsed = Number(value || 15000);
+  if (!Number.isFinite(parsed)) return 15000;
   return Math.round(Math.min(15000, Math.max(1500, parsed)));
 };
 

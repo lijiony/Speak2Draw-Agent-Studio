@@ -17,8 +17,10 @@ describe('aiIntentContract', () => {
     });
     const payload = toAiIntentRequestPayload('让月亮更梦幻', scene, '本地规则无法理解', {
       originalTranscript: '把月亮改一下',
-      question: '需要说明改成什么样。'
-    });
+      question: '需要说明改成什么样。',
+      createdAt: 10,
+      expiresAt: 20
+    } as Parameters<typeof toAiIntentRequestPayload>[3] & { createdAt: number; expiresAt: number });
     const messages = buildDeepSeekMessages(payload);
 
     expect(payload.scene.objects[0]).toMatchObject({
@@ -41,6 +43,8 @@ describe('aiIntentContract', () => {
     });
     expect(payload.scene.selectedName).toBe('月亮');
     expect(payload.clarificationContext?.originalTranscript).toBe('把月亮改一下');
+    expect(JSON.stringify(payload.clarificationContext)).not.toContain('createdAt');
+    expect(JSON.stringify(payload.clarificationContext)).not.toContain('expiresAt');
     expect(messages[0].content).toContain('clarificationContext');
     expect(messages[0].content).toContain(`"schemaVersion":"${AI_INTENT_SCHEMA_VERSION}"`);
     expect(messages[0].content).toContain('rename_object');

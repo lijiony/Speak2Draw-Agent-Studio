@@ -541,15 +541,14 @@ p {
 .voice-command-bar {
   position: relative;
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) 76px minmax(104px, auto);
+  grid-template-columns: minmax(0, 1fr) 76px minmax(104px, auto);
   grid-template-areas:
-    "left title mic state"
-    "strip strip strip strip";
+    "title mic state"
+    "strip strip strip";
   gap: 12px;
   align-items: center;
 }
 
-.floating-mic,
 .mic-control {
   display: inline-flex;
   align-items: center;
@@ -561,10 +560,6 @@ p {
   color: #111827;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 8px 24px rgba(80, 120, 170, 0.12);
-}
-
-.floating-mic {
-  grid-area: left;
 }
 
 .top-title {
@@ -2206,21 +2201,19 @@ h2 {
 }
 
 .voice-command-bar {
-  grid-template-columns: 44px minmax(0, 1fr) 48px;
+  grid-template-columns: minmax(0, 1fr) 48px;
   grid-template-areas:
-    "left title mic"
-    "state state state"
-    "strip strip strip";
+    "title mic"
+    "state state"
+    "strip strip";
   gap: 9px;
 }
 
-.floating-mic,
 .mic-control {
   width: 42px;
   height: 42px;
 }
 
-.floating-mic svg,
 .mic-control svg {
   width: 20px;
   height: 20px;
@@ -2734,6 +2727,90 @@ h2 {
   gap: 10px;
 }
 
+.voice-runtime-block {
+  gap: 8px;
+}
+
+.runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.runtime-grid div {
+  min-width: 0;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 7px;
+}
+
+.runtime-grid dt {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.runtime-grid dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-note,
+.runtime-warning {
+  margin: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.runtime-note {
+  color: #334155;
+  background: #f8fafc;
+}
+
+.runtime-warning {
+  color: #92400e;
+  background: #fff7ed;
+}
+
+.runtime-queue {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runtime-queue li {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid #edf2f7;
+  padding-top: 6px;
+}
+
+.runtime-queue span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-queue strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .overlay-transcript {
   display: grid;
   gap: 5px;
@@ -2997,11 +3074,11 @@ h2 {
   }
 
   .voice-command-bar {
-    grid-template-columns: 64px 1fr 64px;
+    grid-template-columns: 1fr 64px;
     grid-template-areas:
-      "left title mic"
-      "state state state"
-      "strip strip strip";
+      "title mic"
+      "state state"
+      "strip strip";
   }
 
   .top-state {
@@ -3069,7 +3146,6 @@ h2 {
     gap: 10px;
   }
 
-  .floating-mic,
   .mic-control {
     width: 50px;
     height: 50px;
@@ -6048,4 +6124,28 @@ h2 {
 .app-shell .voice-orb svg {
   width: 20px;
   height: 20px;
+}
+
+/* Restore blue affordance in compact execution chains after the decarded polish. */
+.app-shell .pipeline span,
+.app-shell .pipeline strong,
+.app-shell .pipeline svg {
+  color: #2563eb;
+}
+
+.app-shell .pipeline span.active {
+  color: #2563eb;
+  background: transparent;
+}
+
+.status-overlay .execution-path li,
+.status-overlay .execution-path li.skip,
+.status-overlay .execution-path li.done,
+.status-overlay .execution-path li.active {
+  color: #2563eb;
+}
+
+.status-overlay .execution-path li span {
+  color: #ffffff;
+  background: #2563eb;
 }

@@ -55,6 +55,11 @@ export interface VoiceTranscript {
   confidence: number;
   receivedAt: number;
   isFinal: boolean;
+  source?: 'final' | 'interim-fallback' | 'manual-test';
+  utteranceId?: string;
+  startedAt?: number;
+  committedAt?: number;
+  stabilityMs?: number;
 }
 
 export interface PositionHint {

@@ -204,7 +204,13 @@ export const toAiIntentRequestPayload = (
 ): AiIntentRequestPayload => ({
   transcript,
   localReason,
-  clarificationContext,
+  clarificationContext: clarificationContext
+    ? {
+        originalTranscript: clarificationContext.originalTranscript,
+        question: clarificationContext.question,
+        ...(clarificationContext.reason ? { reason: clarificationContext.reason } : {})
+      }
+    : undefined,
   scene: {
     revision: scene.revision,
     objects: scene.objects.map((object) => ({

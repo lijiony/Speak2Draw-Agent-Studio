@@ -18,7 +18,7 @@ copy .env.example .env
 DEEPSEEK_API_KEY=本地密钥
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
-DEEPSEEK_TIMEOUT_MS=8000
+DEEPSEEK_TIMEOUT_MS=15000
 ```
 
 `.env` 必须保持本地 ignored 状态，不能提交到远程仓库。

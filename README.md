@@ -29,7 +29,7 @@ copy .env.example .env
 DEEPSEEK_API_KEY=你的本地密钥
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
-DEEPSEEK_TIMEOUT_MS=8000
+DEEPSEEK_TIMEOUT_MS=15000
 ```
 
 不要提交 `.env`、token、密钥或账号密码。

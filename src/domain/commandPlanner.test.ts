@@ -158,6 +158,24 @@ describe('planCommands', () => {
     });
   });
 
+  it('删除局部部件时返回明确的目标反馈', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '小猫脸', groupId: 'asset-cat', groupName: '小猫', partId: 'part-face', partName: '脸' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-2', name: '小猫帽子', groupId: 'asset-cat', groupName: '小猫', partId: 'part-hat', partName: '帽子' })
+      }
+    ]);
+
+    const plan = planCommands(parseIntent(transcript('把帽子删掉')), scene);
+
+    expect(plan.commands[0]).toMatchObject({ type: 'delete_object' });
+    expect(plan.message).toBe('已删除帽子。');
+  });
+
   it('创建图形时会保留自定义对象名称', () => {
     const single = planCommands(parseIntent(transcript('画一个蓝色圆形叫月亮')), createEmptyScene());
     expect(single.commands[0].object?.name).toBe('月亮');

@@ -19,7 +19,7 @@ export interface PublicSettingsSnapshot extends AppSettings {
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   aiBaseUrl: 'https://api.deepseek.com',
   aiModel: 'deepseek-v4-flash',
-  aiTimeoutMs: 8000,
+  aiTimeoutMs: 15000,
   voicePolicyMode: 'balanced',
   voiceLanguage: 'zh-CN',
   showInterimTranscript: true,
