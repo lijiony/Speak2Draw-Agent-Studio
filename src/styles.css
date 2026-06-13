@@ -5244,10 +5244,22 @@ h2 {
 
 .landing-primary-button > span,
 .landing-primary-button > strong {
-  justify-content: center;
+  position: relative;
+  inset: auto;
+  grid-area: 1 / 1;
+  justify-self: stretch;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
   width: 100%;
   height: 100%;
+  margin: 0;
   text-align: center;
+  transform-origin: center;
+}
+
+.landing-primary-button {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
 
 .landing-primary-button > strong {
@@ -5255,12 +5267,13 @@ h2 {
   font-size: 13px;
   font-weight: 850;
   letter-spacing: 0.01em;
+  pointer-events: none;
 }
 
 .landing-primary-button > strong svg {
   position: absolute;
   top: 50%;
-  left: calc(50% + 50px);
+  left: calc(50% + 53px);
   width: 14px;
   height: 14px;
   stroke-width: 2.4;
@@ -5268,11 +5281,8 @@ h2 {
 }
 
 .landing-enter-label {
-  position: absolute;
-  top: 50%;
-  left: 50%;
+  display: block;
   white-space: nowrap;
-  transform: translate(-50%, -50%);
 }
 
 @media (max-width: 760px) {
