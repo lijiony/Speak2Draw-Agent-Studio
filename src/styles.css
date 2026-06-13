@@ -5486,3 +5486,318 @@ h2 {
     border-bottom: 0;
   }
 }
+
+/* Workbench decard polish: use rails, dividers, and inline controls instead of nested cards. */
+.app-shell .voice-command-bar,
+.app-shell .column-card,
+.app-shell .canvas-action-bar,
+.app-shell .object-workbench,
+.settings-workspace .settings-nav,
+.settings-workspace .settings-panel,
+.settings-workspace .settings-diagnostics {
+  border-color: rgba(203, 213, 225, 0.74);
+  box-shadow: none;
+}
+
+.app-shell .column-card {
+  border: 0;
+  border-radius: 0;
+  padding: 8px 0;
+  background: transparent;
+}
+
+.app-shell .column-card::before {
+  content: none;
+}
+
+.app-shell .column-section,
+.app-shell .mic-test-block,
+.app-shell .status-summary,
+.app-shell .command-guide,
+.app-shell .history-strip {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell .column-section + .column-section,
+.app-shell .mic-test-block,
+.app-shell .status-summary,
+.app-shell .command-guide,
+.app-shell .history-strip,
+.app-shell .info-block,
+.app-shell .action-dock {
+  padding-top: 14px;
+}
+
+.app-shell .column-section + .column-section::before,
+.app-shell .mic-test-block::before,
+.app-shell .status-summary::before,
+.app-shell .command-guide::before,
+.app-shell .history-strip::before,
+.app-shell .info-block::before,
+.app-shell .action-dock::before {
+  position: static;
+  display: block;
+  width: 100%;
+  height: 1px;
+  margin: 0 0 12px;
+  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.18) 50%, transparent);
+  content: "";
+}
+
+.app-shell .live-transcript strong,
+.app-shell .recent-command-list,
+.app-shell .sound-card,
+.app-shell .status-summary-grid span,
+.app-shell .object-property-table,
+.app-shell .rail-object-panel dl,
+.app-shell .settings-note-grid,
+.settings-workspace .settings-diagnostics dl,
+.status-overlay .overlay-metrics span,
+.status-overlay .overlay-transcript,
+.status-overlay .execution-path li,
+.status-overlay .clarification-steps span,
+.status-overlay .clarification-steps strong {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell .live-transcript strong,
+.status-overlay .overlay-transcript {
+  min-height: auto;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 8px 0;
+}
+
+.app-shell .recent-command-list {
+  gap: 0;
+}
+
+.app-shell .recent-command-list > span,
+.app-shell .recent-command-list button,
+.status-overlay .workflow-events li,
+.settings-workspace .settings-diagnostics dl div,
+.settings-workspace .settings-note-grid span,
+.settings-workspace .settings-note-grid strong {
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  background: transparent;
+}
+
+.app-shell .recent-command-list > span,
+.app-shell .recent-command-list button {
+  padding-inline: 0;
+}
+
+.app-shell .script-buttons,
+.app-shell .strategy-tabs {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell .script-buttons button,
+.app-shell .voice-activity-row span,
+.app-shell .strategy-tabs span,
+.app-shell .strategy-tabs strong,
+.app-shell .canvas-action-buttons button,
+.app-shell .action-row button,
+.app-shell .status-open-button,
+.status-overlay .overlay-actions button,
+.settings-workspace .settings-actions button,
+.settings-workspace .settings-nav button,
+.settings-workspace .settings-close-button,
+.settings-workspace .settings-danger-lite {
+  border-color: rgba(203, 213, 225, 0.86);
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.62);
+  box-shadow: none;
+}
+
+.app-shell .script-buttons button + button {
+  border-left: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.app-shell .status-summary-grid {
+  gap: 0;
+}
+
+.app-shell .status-summary-grid span {
+  border-bottom: 1px solid rgba(226, 232, 240, 0.92);
+  padding: 8px 0;
+}
+
+.app-shell .status-summary-grid span + span {
+  padding-left: 14px;
+}
+
+.app-shell .sound-card {
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 10px 0;
+}
+
+.app-shell .canvas-action-bar {
+  border: 0;
+  border-top: 1px solid rgba(203, 213, 225, 0.84);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell .object-workbench.side,
+.app-shell .object-workbench.bottom {
+  border: 0;
+  border-left: 1px solid rgba(203, 213, 225, 0.8);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.app-shell .object-property-table,
+.app-shell .rail-object-panel dl {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.app-shell .object-property-row,
+.app-shell .rail-object-panel dl div {
+  border-right: 0;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  background: transparent;
+  padding-inline: 0;
+}
+
+.app-shell .pipeline span,
+.app-shell .pipeline strong,
+.app-shell .capability-chip {
+  border: 0;
+  border-radius: 0;
+  padding-inline: 0;
+  background: transparent;
+}
+
+.app-shell .capability-chip::before {
+  width: 5px;
+  height: 5px;
+}
+
+.status-overlay .overlay-metrics {
+  gap: 0;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.status-overlay .overlay-metrics span {
+  padding: 8px 8px 8px 0;
+}
+
+.status-overlay .overlay-metrics span + span {
+  padding-left: 8px;
+}
+
+.status-overlay .execution-path ol {
+  gap: 0;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.status-overlay .execution-path li {
+  min-height: 48px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  padding-inline: 0;
+}
+
+.status-overlay .clarification-steps span,
+.status-overlay .clarification-steps strong {
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 6px 0;
+}
+
+.settings-workspace .settings-nav,
+.settings-workspace .settings-panel,
+.settings-workspace .settings-diagnostics {
+  border: 0;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.settings-workspace .settings-panel,
+.settings-workspace .settings-diagnostics {
+  border-left: 1px solid rgba(203, 213, 225, 0.84);
+}
+
+.settings-workspace .settings-field input,
+.settings-workspace .settings-field select,
+.settings-workspace .settings-segment {
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.7);
+  box-shadow: none;
+}
+
+.settings-workspace .settings-note-grid,
+.settings-workspace .settings-diagnostics dl {
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.settings-workspace .settings-note-grid span,
+.settings-workspace .settings-note-grid strong,
+.settings-workspace .settings-diagnostics dt,
+.settings-workspace .settings-diagnostics dd {
+  padding-inline: 0;
+}
+
+.settings-workspace .settings-voice-hints strong {
+  border-radius: 999px;
+  background: transparent;
+}
+
+.app-shell .command-guide {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.app-shell .command-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 0 8px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  scrollbar-width: none;
+}
+
+.app-shell .command-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.app-shell .command-tabs h2 {
+  flex: 0 0 auto;
+  margin: 0 6px 0 0;
+  color: #64748b;
+}
+
+.app-shell .command-tabs button {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+}
+
+.app-shell .command-tabs button.active::before {
+  top: auto;
+  right: 7px;
+  bottom: -8px;
+  left: 7px;
+  width: auto;
+  height: 2px;
+}
+
+.app-shell .command-feed {
+  min-width: 0;
+}
+
+.app-shell .command-feed button {
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+}
