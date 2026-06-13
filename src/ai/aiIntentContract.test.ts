@@ -52,6 +52,10 @@ describe('aiIntentContract', () => {
     expect(messages[0].content).toContain('update_text');
     expect(messages[0].content).toContain('align_objects');
     expect(messages[0].content).toContain('distribute_objects');
+    expect(messages[0].content).toContain('只输出符合 schema 的 JSON');
+    expect(messages[0].content).toContain('slot/relativeTo/size');
+    expect(messages[0].content).toContain('严禁返回 SVG path');
+    expect(messages[0].content).toContain('局部编辑不能误删或替换整组');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.create_shape).toContain('shape');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.rename_object).toContain('name');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.update_text).toContain('text');
@@ -79,23 +83,54 @@ describe('aiIntentContract', () => {
     });
   });
 
+  it('兼容旧版 schema 包裹格式', () => {
+    const intent = parseDeepSeekIntentContent(
+      JSON.stringify({
+        schemaVersion: '1.0',
+        intent: {
+          type: 'create_asset_recipe',
+          name: '旧版猫',
+          recipe: [{ shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 420, y: 220 } }]
+        }
+      }),
+      '画一只猫'
+    );
+
+    expect(intent).toMatchObject({
+      type: 'create_asset_recipe',
+      name: '旧版猫',
+      recipe: [{ shape: 'circle', name: '猫脸', position: { x: 420, y: 220 } }]
+    });
+  });
+
   it('解析并清洗 AI 返回的安全素材配方', () => {
     const intent = parseDeepSeekIntentContent(
-      '```json\n{"type":"create_asset_recipe","name":"猫","recipe":[{"shape":"circle","name":"猫脸","color":"#f9fafb","position":{"x":1200,"y":-20},"width":999,"height":10},{"shape":"path","name":"非法路径","color":"red"}]}\n```',
+      '```json\n{"schemaVersion":"2.0","intent":{"type":"create_asset_recipe","name":"猫","recipe":[{"shape":"circle","name":"猫脸","partName":"脸","color":"#f9fafb","slot":"center","relativeTo":"身体","offset":{"x":2,"y":-2},"size":"large","position":{"x":1200,"y":-20},"width":999,"height":10},{"shape":"path","name":"非法路径","color":"red"},{"shape":"rectangle","name":"坏槽位","slot":"middle","color":"red"}]}}\n```',
       '画一只猫'
     );
 
     expect(intent?.type).toBe('create_asset_recipe');
     expect(intent?.name).toBe('猫');
-    expect(intent?.recipe).toHaveLength(1);
+    expect(intent?.recipe).toHaveLength(2);
     expect(intent?.recipe?.[0]).toMatchObject({
       shape: 'circle',
       name: '猫脸',
+      partName: '脸',
       color: '#f9fafb',
+      slot: 'center',
+      relativeTo: '身体',
+      offset: { x: 1, y: -1 },
+      size: 'large',
       position: { x: 940, y: 0 },
       width: 420,
       height: 20
     });
+    expect(intent?.recipe?.[1]).toMatchObject({
+      shape: 'rectangle',
+      name: '坏槽位'
+    });
+    expect(intent?.recipe?.[1].slot).toBeUndefined();
+    expect(intent?.recipe?.[1].color).toBeUndefined();
   });
 
   it('接受 AI 返回局部修改意图', () => {
@@ -130,6 +165,35 @@ describe('aiIntentContract', () => {
       selector: { mode: 'by_id', objectId: 'shape-8', scope: 'part' },
       attachTo: { mode: 'by_group_id', groupId: 'asset-cat', scope: 'group' },
       recipe: [{ partName: '帽子' }]
+    });
+  });
+
+  it('兼容 AI 在局部修改中使用 partName 字段和隐式替换操作', () => {
+    const intent = normalizeAiIntent(
+      {
+        type: 'revise_asset_part',
+        targetPartName: '帽子',
+        groupName: '小猫',
+        recipe: [
+          {
+            shape: 'rectangle',
+            name: '蓝帽檐',
+            partName: '帽子',
+            color: '#2563eb',
+            slot: 'top',
+            relativeTo: '脸',
+            size: 'small'
+          }
+        ]
+      },
+      '给猫换一顶蓝帽子'
+    );
+
+    expect(intent).toMatchObject({
+      type: 'revise_asset_part',
+      operation: 'replace',
+      selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫', scope: 'part' },
+      recipe: [{ name: '蓝帽檐', slot: 'top', relativeTo: '脸' }]
     });
   });
 

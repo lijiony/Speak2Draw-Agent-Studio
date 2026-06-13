@@ -1,6 +1,8 @@
 import {
   buildDeepSeekMessages,
+  getAiIntentSchemaVersion,
   parseDeepSeekIntentContent,
+  summarizeDeepSeekIntentContent,
   type AiIntentRequestPayload,
   type AiIntentResponsePayload
 } from './aiIntentContract';
@@ -59,7 +61,14 @@ export const resolveDeepSeekIntent = async (
     const intent = parseDeepSeekIntentContent(content, payload.transcript);
     if (!intent) return { ok: false, provider: 'deepseek', reason: 'DeepSeek 返回内容未通过安全校验。' };
 
-    return { ok: true, provider: 'deepseek', model, intent };
+    return {
+      ok: true,
+      provider: 'deepseek',
+      model,
+      intent,
+      schemaVersion: getAiIntentSchemaVersion(content),
+      rawIntentSummary: summarizeDeepSeekIntentContent(content)
+    };
   } catch (error) {
     const reason = error instanceof Error && error.name === 'AbortError' ? 'DeepSeek 响应超时。' : 'AI 指令解析请求失败。';
     return { ok: false, provider: 'deepseek', reason };

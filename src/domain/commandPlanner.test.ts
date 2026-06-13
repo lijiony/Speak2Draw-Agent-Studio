@@ -99,6 +99,55 @@ describe('planCommands', () => {
     expect(plan.commands.map((command) => command.object?.groupName)).toEqual(['戴帽子的猫', '戴帽子的猫']);
   });
 
+  it('AI 语义配方即使没有 position 也会生成稳定布局诊断', () => {
+    const plan = planCommands(
+      {
+        type: 'create_asset_recipe',
+        rawText: '画一只戴帽子的猫',
+        name: '戴帽子的小猫',
+        recipe: [
+          { shape: 'circle', name: '小猫脸', partName: '脸', slot: 'center', size: 'large', color: '#f8fafc' },
+          { shape: 'triangle', name: '左耳', partName: '耳朵', slot: 'top-left', relativeTo: '脸', size: 'small', color: '#f8fafc' },
+          { shape: 'rectangle', name: '帽子', partName: '帽子', slot: 'top', relativeTo: '脸', size: 'small', color: '#ef4444' }
+        ]
+      },
+      createEmptyScene()
+    );
+
+    const face = plan.commands.find((command) => command.object?.partName === '脸')?.object;
+    const hat = plan.commands.find((command) => command.object?.partName === '帽子')?.object;
+
+    expect(plan.commands).toHaveLength(3);
+    expect(plan.layoutDiagnostics).toMatchObject({
+      acceptedCount: 3,
+      commandCount: 3,
+      groupName: '戴帽子的小猫'
+    });
+    expect(hat?.y).toBeLessThan(face?.y ?? 0);
+  });
+
+  it('AI 返回所有部件同坐标时规划层仍会重新排开', () => {
+    const plan = planCommands(
+      {
+        type: 'create_asset_recipe',
+        rawText: '画一朵花',
+        name: '花',
+        recipe: [
+          { shape: 'circle', name: '花心', partName: '花蕊', position: { x: 100, y: 100 }, width: 60, height: 60 },
+          { shape: 'ellipse', name: '上花瓣', partName: '花瓣', slot: 'top', position: { x: 100, y: 100 }, width: 70, height: 42 },
+          { shape: 'ellipse', name: '下花瓣', partName: '花瓣', slot: 'bottom', position: { x: 100, y: 100 }, width: 70, height: 42 },
+          { shape: 'ellipse', name: '左花瓣', partName: '花瓣', slot: 'left', position: { x: 100, y: 100 }, width: 70, height: 42 },
+          { shape: 'ellipse', name: '右花瓣', partName: '花瓣', slot: 'right', position: { x: 100, y: 100 }, width: 70, height: 42 }
+        ]
+      },
+      createEmptyScene()
+    );
+    const centers = new Set(plan.commands.map((command) => `${Math.round((command.object?.x ?? 0) + (command.object?.width ?? 0) / 2)}:${Math.round((command.object?.y ?? 0) + (command.object?.height ?? 0) / 2)}`));
+
+    expect(plan.commands).toHaveLength(5);
+    expect(centers.size).toBeGreaterThan(3);
+  });
+
   it('AI 素材配方可以附加到已有素材组', () => {
     const scene = applyCommandsAsTransaction(createEmptyScene(), [
       {

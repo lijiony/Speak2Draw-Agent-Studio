@@ -1,5 +1,6 @@
 import { applyCommands, CANVAS_HEIGHT, CANVAS_WIDTH, createSceneObject, findObject, findObjects } from './sceneModel';
-import type { DrawingCommand, DrawingIntent, SceneObject, SceneState, ShapeKind } from './types';
+import { layoutAssetRecipe } from './assetRecipeLayout';
+import type { DrawingCommand, DrawingIntent, LayoutDiagnostics, SceneObject, SceneState, ShapeKind } from './types';
 import { normalizeVoiceText } from './voiceText';
 import { detectColor, detectShape } from './intentParser';
 
@@ -9,7 +10,9 @@ export const resetCommandIdsForTest = () => {
   nextId = 1;
 };
 
-export const planCommands = (intent: DrawingIntent, scene: SceneState): { commands: DrawingCommand[]; message?: string; needsClarification?: boolean } => {
+export type DrawingCommandPlan = { commands: DrawingCommand[]; message?: string; needsClarification?: boolean; layoutDiagnostics?: LayoutDiagnostics };
+
+export const planCommands = (intent: DrawingIntent, scene: SceneState): DrawingCommandPlan => {
   switch (intent.type) {
     case 'sequence':
       return planSequenceCommands(intent.intents ?? [], scene);
@@ -28,9 +31,9 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
     case 'create_complex_scene':
       return { commands: createComplexCommands(intent.rawText) };
     case 'create_asset_recipe': {
-      const commands = createAssetRecipeCommands(intent, scene);
-      return commands.length
-        ? { commands }
+      const recipePlan = createAssetRecipePlan(intent, scene);
+      return recipePlan.commands.length
+        ? recipePlan
         : { commands: [], message: 'AI 没有生成可安全执行的绘图配方，请换一种说法。', needsClarification: true };
     }
     case 'revise_asset_part': {
@@ -44,11 +47,12 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
         };
       }
       const attachTo = target.groupId ? { mode: 'by_group_id' as const, groupId: target.groupId, scope: 'group' as const } : intent.attachTo;
-      const createCommands = createAssetRecipeCommands({ ...intent, type: 'create_asset_recipe', attachTo }, scene);
-      return createCommands.length
+      const recipePlan = createAssetRecipePlan({ ...intent, type: 'create_asset_recipe', attachTo }, scene, target);
+      return recipePlan.commands.length
         ? {
-            commands: [{ type: 'delete_object', selector: partSelector }, ...createCommands],
-            message: `已替换${target.partName ?? target.name}。`
+            commands: [{ type: 'delete_object', selector: partSelector }, ...recipePlan.commands],
+            message: `已替换${target.partName ?? target.name}。`,
+            layoutDiagnostics: recipePlan.layoutDiagnostics
           }
         : { commands: [], message: 'AI 没有生成可替换的安全部件。', needsClarification: true };
     }
@@ -231,7 +235,7 @@ const createCommand = (shape: ShapeKind, intent: DrawingIntent): DrawingCommand 
   })
 });
 
-const createAssetRecipeCommands = (intent: DrawingIntent, scene: SceneState): DrawingCommand[] => {
+const createAssetRecipePlan = (intent: DrawingIntent, scene: SceneState, placementTarget?: SceneObject): DrawingCommandPlan => {
   const recipe = (intent.recipe ?? []).slice(0, 16);
   const attachedTarget = intent.attachTo ? findObject(scene.objects, intent.attachTo, scene.selectedId, scene.selection) : undefined;
   const attachedGroup = attachedTarget?.groupId
@@ -243,24 +247,40 @@ const createAssetRecipeCommands = (intent: DrawingIntent, scene: SceneState): Dr
   const groupName = attachedGroup?.groupName ?? intent.name ?? inferAssetGroupName(intent.rawText, recipe);
   const groupId = attachedGroup?.groupId ?? (groupName ? createGroupId() : undefined);
   const partIdsByName = new Map<string, string>();
+  const layout = layoutAssetRecipe({
+    recipe,
+    scene,
+    groupName,
+    groupId,
+    placementTarget: placementTarget ?? attachedTarget,
+    transcript: intent.rawText
+  });
 
-  return recipe.map((item, index) =>
-    objectCommand(item.shape, {
-      name: item.name ?? (groupName ? `${groupName}部件${index + 1}` : undefined),
+  const commands = layout.items.map((layoutItem, index) =>
+    objectCommand(layoutItem.item.shape, {
+      name: layoutItem.item.name ?? (groupName ? `${groupName}部件${index + 1}` : undefined),
       groupId,
       groupName,
-      partName: item.partName,
-      partId: item.partName ? partIdForName(partIdsByName, item.partName) : undefined,
-      x: item.position?.x,
-      y: item.position?.y,
-      width: item.width,
-      height: item.height,
-      fill: item.shape === 'line' ? 'none' : item.color,
-      stroke: item.strokeColor ?? (item.shape === 'line' ? item.color ?? '#111827' : '#111827'),
-      strokeWidth: item.strokeWidth,
-      text: item.text
+      partName: layoutItem.item.partName,
+      partId: layoutItem.item.partName ? partIdForName(partIdsByName, layoutItem.item.partName) : undefined,
+      x: layoutItem.x,
+      y: layoutItem.y,
+      width: layoutItem.width,
+      height: layoutItem.height,
+      fill: layoutItem.item.shape === 'line' ? 'none' : layoutItem.item.color,
+      stroke: layoutItem.item.strokeColor ?? (layoutItem.item.shape === 'line' ? layoutItem.item.color ?? '#111827' : '#111827'),
+      strokeWidth: layoutItem.item.strokeWidth,
+      text: layoutItem.item.text
     })
   );
+
+  return {
+    commands,
+    layoutDiagnostics: {
+      ...layout.diagnostics,
+      commandCount: commands.length
+    }
+  };
 };
 
 const createComplexCommands = (rawText: string): DrawingCommand[] => {
@@ -315,9 +335,10 @@ const createComplexCommands = (rawText: string): DrawingCommand[] => {
 const planSequenceCommands = (
   intents: DrawingIntent[],
   scene: SceneState
-): { commands: DrawingCommand[]; message?: string; needsClarification?: boolean } => {
+): DrawingCommandPlan => {
   const commands: DrawingCommand[] = [];
   let draftScene = scene;
+  let layoutDiagnostics: LayoutDiagnostics | undefined;
 
   for (const intent of intents) {
     const plan = planCommands(intent, draftScene);
@@ -329,10 +350,11 @@ const planSequenceCommands = (
       };
     }
     commands.push(...plan.commands);
+    layoutDiagnostics = plan.layoutDiagnostics ?? layoutDiagnostics;
     draftScene = applyCommands(draftScene, plan.commands);
   }
 
-  return { commands };
+  return { commands, layoutDiagnostics };
 };
 
 const objectCommand = (

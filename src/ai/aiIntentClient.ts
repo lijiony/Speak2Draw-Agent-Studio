@@ -65,7 +65,9 @@ export const resolveAiIntent = async (
       ok: true,
       provider: 'deepseek',
       model: payload.model,
-      intent
+      intent,
+      schemaVersion: payload.schemaVersion,
+      rawIntentSummary: payload.rawIntentSummary
     };
   } catch {
     return {

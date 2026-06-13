@@ -162,6 +162,7 @@ export const App = () => {
   const sceneRef = useRef(scene);
   const [lastTranscript, setLastTranscript] = useState('等待语音指令');
   const [lastResult, setLastResult] = useState<ExecutionResult | null>(null);
+  const lastResultRef = useRef<ExecutionResult | null>(null);
   const [micTestStatus, setMicTestStatus] = useState<'idle' | 'testing'>('idle');
   const [micTestResult, setMicTestResult] = useState<MicrophoneTestResult | null>(null);
   const [micTestSample, setMicTestSample] = useState<MicrophoneInputSample | null>(null);
@@ -354,10 +355,15 @@ export const App = () => {
 
   const publishResult = useCallback(
     async (transcript: VoiceTranscript, result: ExecutionResult, source: string, eventTitle?: string) => {
+      const resultForDisplay =
+        !result.layoutDiagnostics && result.commandsExecuted === 0 && lastResultRef.current?.layoutDiagnostics
+          ? { ...result, layoutDiagnostics: lastResultRef.current.layoutDiagnostics }
+          : result;
       setLastTranscript(transcript.text);
       setScene(result.scene);
       sceneRef.current = result.scene;
-      setLastResult(result);
+      setLastResult(resultForDisplay);
+      lastResultRef.current = resultForDisplay;
       setHistory((items) => [
         {
           transcript: transcript.text,
@@ -544,6 +550,17 @@ export const App = () => {
           const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
           executionScene = latestScene;
           plan = planCommands(aiResult.intent, latestScene);
+          if (plan.layoutDiagnostics) {
+            plan = {
+              ...plan,
+              layoutDiagnostics: {
+                ...plan.layoutDiagnostics,
+                schemaVersion: aiResult.schemaVersion ?? plan.layoutDiagnostics.schemaVersion,
+                rawSummary: aiResult.rawIntentSummary ?? plan.layoutDiagnostics.rawSummary,
+                transcript: transcript.text
+              }
+            };
+          }
           aiHistoryLabel = 'DeepSeek';
           setAiStatus({
             state: 'used',
@@ -561,6 +578,17 @@ export const App = () => {
               const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
               executionScene = latestScene;
               plan = planCommands(localCreativeIntent, latestScene);
+              if (plan.layoutDiagnostics) {
+                plan = {
+                  ...plan,
+                  layoutDiagnostics: {
+                    ...plan.layoutDiagnostics,
+                    schemaVersion: 'local',
+                    rawSummary: `${localCreativeIntent.type}:${localCreativeIntent.name ?? '素材'}, recipe ${localCreativeIntent.recipe?.length ?? 0}`,
+                    transcript: transcript.text
+                  }
+                };
+              }
               aiHistoryLabel = '本地素材配方';
               setAiStatus({
                 state: 'fallback',
@@ -1944,6 +1972,7 @@ const StatusRail = ({
     <RailObjectInspector selected={selected} objectCount={objectCount} lastResult={lastResult} />
     <div className="soft-divider" />
     <ExecutionPathBlock aiStatus={aiStatus} lastResult={lastResult} />
+    <AiLayoutDiagnosticsBlock diagnostics={lastResult?.layoutDiagnostics} />
     <div className="soft-divider" />
     <ClarificationFlowBlock clarification={clarification} lastTranscript={lastTranscript} selected={selected} />
     <div className="soft-divider" />
@@ -2055,6 +2084,7 @@ const ExecutionPathBlock = ({ aiStatus, lastResult }: { aiStatus: AiResolutionSt
     { label: '本地', fullLabel: '本地规则解析', state: 'done' },
     { label: 'AI', fullLabel: 'DeepSeek 兜底', state: aiStatus.state === 'used' ? 'done' : aiStatus.state === 'checking' ? 'active' : 'skip' },
     { label: 'Schema', fullLabel: 'JSON schema 校验', state: lastResult ? 'done' : 'skip' },
+    { label: '布局', fullLabel: '本地语义布局', state: lastResult?.layoutDiagnostics ? 'done' : 'skip' },
     { label: '命令', fullLabel: '白名单绘图命令', state: lastResult ? 'done' : 'skip' },
     { label: 'SVG', fullLabel: 'SVG 画布渲染', state: lastResult?.ok ? 'done' : 'skip' }
   ];
@@ -2072,6 +2102,51 @@ const ExecutionPathBlock = ({ aiStatus, lastResult }: { aiStatus: AiResolutionSt
           </li>
         ))}
       </ol>
+    </section>
+  );
+};
+
+const AiLayoutDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionResult['layoutDiagnostics'] }) => {
+  if (!diagnostics) return null;
+  const visibleParts = diagnostics.parts.slice(0, 5);
+  return (
+    <section className="ai-layout-diagnostics" aria-label="AI 配方布局">
+      <div className="section-label">
+        <BrainCircuit size={17} />
+        <h2>AI 配方布局</h2>
+      </div>
+      <dl className="layout-diagnostics-grid">
+        <div>
+          <dt>Schema</dt>
+          <dd>{diagnostics.schemaVersion ?? '已归一化'}</dd>
+        </div>
+        <div>
+          <dt>JSON 摘要</dt>
+          <dd>{diagnostics.rawSummary ?? '本地配方'}</dd>
+        </div>
+        <div>
+          <dt>校验</dt>
+          <dd>
+            {diagnostics.acceptedCount}/{diagnostics.inputCount} 部件
+          </dd>
+        </div>
+        <div>
+          <dt>命令</dt>
+          <dd>{diagnostics.commandCount}</dd>
+        </div>
+      </dl>
+      <ol className="layout-part-list">
+        {visibleParts.map((part) => (
+          <li key={`${part.index}-${part.name}`}>
+            <span>{part.slot}</span>
+            <strong>{part.partName ?? part.name}</strong>
+            <small>
+              {part.x},{part.y} · {part.width}x{part.height}
+            </small>
+          </li>
+        ))}
+      </ol>
+      {diagnostics.warnings.length ? <p className="layout-warning">{diagnostics.warnings.slice(0, 2).join('；')}</p> : null}
     </section>
   );
 };
@@ -2366,6 +2441,7 @@ const StatusOverlay = ({
         <VoiceRuntimeBlock runtime={voiceRuntime} pendingConfirmation={pendingConfirmation} />
         <AiStatusBlock status={aiStatus} voiceStatus={status} objectCount={objectCount} selected={selected} selection={selection} lastResult={lastResult} />
         <ExecutionPathBlock aiStatus={aiStatus} lastResult={lastResult} />
+        <AiLayoutDiagnosticsBlock diagnostics={lastResult?.layoutDiagnostics} />
         <ClarificationFlowBlock clarification={clarification} lastTranscript={lastTranscript} selected={selected} />
         <RailObjectInspector selected={selected} objectCount={objectCount} lastResult={lastResult} />
 
@@ -2801,17 +2877,17 @@ const createLocalCreativeAssetIntent = (text: string): DrawingIntent | null => {
   if (/(猫|小猫|小花猫|戴帽子的猫|戴帽子的小猫)/.test(text)) {
     const withHat = /(帽子|戴帽|红帽|礼帽)/.test(text);
     const recipe: DrawingRecipeItem[] = [
-      { shape: 'circle', name: '小猫脸', partName: '脸', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, position: { x: 370, y: 228 }, width: 158, height: 136 },
-      { shape: 'triangle', name: '小猫左耳', partName: '耳朵', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, position: { x: 376, y: 188 }, width: 58, height: 70 },
-      { shape: 'triangle', name: '小猫右耳', partName: '耳朵', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, position: { x: 465, y: 188 }, width: 58, height: 70 },
-      { shape: 'circle', name: '小猫左眼', partName: '眼睛', color: '#111827', strokeColor: '#111827', strokeWidth: 2, position: { x: 416, y: 274 }, width: 18, height: 18 },
-      { shape: 'circle', name: '小猫右眼', partName: '眼睛', color: '#111827', strokeColor: '#111827', strokeWidth: 2, position: { x: 462, y: 274 }, width: 18, height: 18 },
-      { shape: 'triangle', name: '小猫鼻子', partName: '鼻子', color: '#ec4899', strokeColor: '#111827', strokeWidth: 2, position: { x: 438, y: 300 }, width: 22, height: 18 }
+      { shape: 'circle', name: '小猫脸', partName: '脸', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, slot: 'center', size: 'large', position: { x: 370, y: 228 }, width: 158, height: 136 },
+      { shape: 'triangle', name: '小猫左耳', partName: '耳朵', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, slot: 'top-left', relativeTo: '脸', size: 'small', position: { x: 376, y: 188 }, width: 58, height: 70 },
+      { shape: 'triangle', name: '小猫右耳', partName: '耳朵', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, slot: 'top-right', relativeTo: '脸', size: 'small', position: { x: 465, y: 188 }, width: 58, height: 70 },
+      { shape: 'circle', name: '小猫左眼', partName: '眼睛', color: '#111827', strokeColor: '#111827', strokeWidth: 2, slot: 'left', relativeTo: '脸', size: 'tiny', position: { x: 416, y: 274 }, width: 18, height: 18 },
+      { shape: 'circle', name: '小猫右眼', partName: '眼睛', color: '#111827', strokeColor: '#111827', strokeWidth: 2, slot: 'right', relativeTo: '脸', size: 'tiny', position: { x: 462, y: 274 }, width: 18, height: 18 },
+      { shape: 'triangle', name: '小猫鼻子', partName: '鼻子', color: '#ec4899', strokeColor: '#111827', strokeWidth: 2, slot: 'bottom', relativeTo: '脸', size: 'tiny', position: { x: 438, y: 300 }, width: 22, height: 18 }
     ];
     if (withHat) {
       recipe.push(
-        { shape: 'rectangle', name: '小猫帽檐', partName: '帽子', color: '#ef4444', strokeColor: '#111827', strokeWidth: 3, position: { x: 393, y: 204 }, width: 112, height: 26 },
-        { shape: 'rectangle', name: '小猫帽子', partName: '帽子', color: '#ef4444', strokeColor: '#111827', strokeWidth: 3, position: { x: 418, y: 164 }, width: 64, height: 48 }
+        { shape: 'rectangle', name: '小猫帽檐', partName: '帽子', color: '#ef4444', strokeColor: '#111827', strokeWidth: 3, slot: 'top', relativeTo: '脸', size: 'small', offset: { x: 0, y: 0.16 }, position: { x: 393, y: 204 }, width: 112, height: 26 },
+        { shape: 'rectangle', name: '小猫帽子', partName: '帽子', color: '#ef4444', strokeColor: '#111827', strokeWidth: 3, slot: 'top', relativeTo: '脸', size: 'small', offset: { x: 0, y: -0.42 }, position: { x: 418, y: 164 }, width: 64, height: 48 }
       );
     }
     return {

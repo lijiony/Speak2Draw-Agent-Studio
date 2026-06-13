@@ -1807,6 +1807,7 @@ h2 {
 }
 
 .execution-path,
+.ai-layout-diagnostics,
 .clarification-flow {
   display: grid;
   gap: 10px;
@@ -1874,6 +1875,77 @@ h2 {
   border-color: #fed7aa;
   color: #b45309;
   background: #fff7ed;
+}
+
+.layout-diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.layout-diagnostics-grid div {
+  min-width: 0;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 7px;
+}
+
+.layout-diagnostics-grid dt,
+.layout-part-list span,
+.layout-part-list small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.layout-diagnostics-grid dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-part-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.layout-part-list li {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) minmax(86px, auto);
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid #edf2f7;
+  padding: 6px 0;
+}
+
+.layout-part-list strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-part-list small {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.layout-warning {
+  margin: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #92400e;
+  background: #fff7ed;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .clarification-steps {

@@ -3,6 +3,8 @@ export type LayerDirection = 'front' | 'back' | 'forward' | 'backward';
 export type AlignmentMode = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom';
 export type DistributionAxis = 'horizontal' | 'vertical';
 export type SelectionScope = 'group' | 'part';
+export type RecipeSlot = 'center' | 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+export type RecipeSize = 'tiny' | 'small' | 'medium' | 'large';
 
 export type DrawingIntentType =
   | 'sequence'
@@ -67,6 +69,11 @@ export interface PositionHint {
   y: number;
 }
 
+export interface RecipeOffset {
+  x: number;
+  y: number;
+}
+
 export interface SceneStyle {
   fill: string;
   stroke: string;
@@ -101,6 +108,45 @@ export interface DrawingRecipeItem {
   height?: number;
   text?: string;
   partName?: string;
+  slot?: RecipeSlot;
+  relativeTo?: string;
+  offset?: RecipeOffset;
+  size?: RecipeSize;
+}
+
+export interface LayoutPartDiagnostics {
+  index: number;
+  name: string;
+  partName?: string;
+  shape: ShapeKind;
+  slot: RecipeSlot;
+  relativeTo?: string;
+  size: RecipeSize;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  warnings?: string[];
+}
+
+export interface LayoutDiagnostics {
+  schemaVersion?: string;
+  rawSummary?: string;
+  transcript?: string;
+  groupName?: string;
+  groupId?: string;
+  inputCount: number;
+  acceptedCount: number;
+  droppedCount: number;
+  commandCount: number;
+  warnings: string[];
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  parts: LayoutPartDiagnostics[];
 }
 
 export type SceneSelection =
@@ -188,4 +234,5 @@ export interface ExecutionResult {
   latencyMs: number;
   needsClarification?: boolean;
   exportSvg?: string;
+  layoutDiagnostics?: LayoutDiagnostics;
 }

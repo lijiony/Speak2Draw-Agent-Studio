@@ -4,7 +4,7 @@ declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => Promise<void>;
-      getScene: () => { objects: Array<{ name: string; groupName?: string; partName?: string; kind: string; x: number; style: { fill: string } }> };
+      getScene: () => { objects: Array<{ name: string; groupName?: string; partName?: string; kind: string; x: number; y: number; width: number; height: number; style: { fill: string } }> };
       getAiStatus: () => { state: string; message: string };
       getClarification: () => { originalTranscript: string; question: string } | null;
       getVoiceDiagnostics: () => { policyMode: string; phase: string; interimText: string | null; finalText: string | null };
@@ -321,14 +321,16 @@ test('AI 慢请求期间后续语音会排队并按顺序执行', async ({ page 
           ok: true,
           provider: 'deepseek',
           model: 'deepseek-v4-flash',
+          schemaVersion: '2.0',
+          rawIntentSummary: 'create_asset_recipe:戴帽子的小猫, recipe 4',
           intent: {
             type: 'create_asset_recipe',
             name: '戴帽子的小猫',
             recipe: [
-              { shape: 'circle', name: '小猫脸', partName: '脸', color: '#f9fafb', position: { x: 370, y: 230 }, width: 160, height: 140 },
-              { shape: 'triangle', name: '小猫左耳', partName: '耳朵', color: '#f9fafb', position: { x: 375, y: 190 }, width: 60, height: 70 },
-              { shape: 'triangle', name: '小猫右耳', partName: '耳朵', color: '#f9fafb', position: { x: 470, y: 190 }, width: 60, height: 70 },
-              { shape: 'rectangle', name: '红色帽子', partName: '帽子', color: '#ef4444', position: { x: 405, y: 185 }, width: 100, height: 36 }
+              { shape: 'circle', name: '小猫脸', partName: '脸', color: '#f9fafb', slot: 'center', size: 'large' },
+              { shape: 'triangle', name: '小猫左耳', partName: '耳朵', color: '#f9fafb', slot: 'top-left', relativeTo: '脸', size: 'small' },
+              { shape: 'triangle', name: '小猫右耳', partName: '耳朵', color: '#f9fafb', slot: 'top-right', relativeTo: '脸', size: 'small' },
+              { shape: 'rectangle', name: '红色帽子', partName: '帽子', color: '#ef4444', slot: 'top', relativeTo: '脸', size: 'small' }
             ]
           }
         })
@@ -731,14 +733,16 @@ test('AI 可以把缺失元素生成安全矢量配方', async ({ page }) => {
         ok: true,
         provider: 'deepseek',
         model: 'deepseek-v4-flash',
+        schemaVersion: '2.0',
+        rawIntentSummary: 'create_asset_recipe:戴帽子的小猫, recipe 4',
         intent: {
           type: 'create_asset_recipe',
           name: '戴帽子的小猫',
           recipe: [
-            { shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 370, y: 230 }, width: 160, height: 140 },
-            { shape: 'triangle', name: '猫左耳', color: '#f9fafb', position: { x: 375, y: 190 }, width: 60, height: 70 },
-            { shape: 'triangle', name: '猫右耳', color: '#f9fafb', position: { x: 470, y: 190 }, width: 60, height: 70 },
-            { shape: 'rectangle', name: '红色帽子', color: '#ef4444', position: { x: 405, y: 185 }, width: 100, height: 36 }
+            { shape: 'circle', name: '猫脸', partName: '脸', color: '#f9fafb', slot: 'center', size: 'large' },
+            { shape: 'triangle', name: '猫左耳', partName: '耳朵', color: '#f9fafb', slot: 'top-left', relativeTo: '脸', size: 'small' },
+            { shape: 'triangle', name: '猫右耳', partName: '耳朵', color: '#f9fafb', slot: 'top-right', relativeTo: '脸', size: 'small' },
+            { shape: 'rectangle', name: '红色帽子', partName: '帽子', color: '#ef4444', slot: 'top', relativeTo: '脸', size: 'small' }
           ]
         }
       })
@@ -751,14 +755,68 @@ test('AI 可以把缺失元素生成安全矢量配方', async ({ page }) => {
   const objectNames = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? []);
   expect(objectNames).toEqual(['猫脸', '猫左耳', '猫右耳', '红色帽子']);
   expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.groupName) ?? [])).toEqual(['戴帽子的小猫', '戴帽子的小猫', '戴帽子的小猫', '戴帽子的小猫']);
+  const parts = await page.evaluate(() => window.__speak2drawTest?.getScene().objects ?? []);
+  const face = parts.find((object) => object.partName === '脸');
+  const hat = parts.find((object) => object.partName === '帽子');
+  expect(hat?.y).toBeLessThan(face?.y ?? 0);
   await expect(page.locator('svg circle[fill="#f9fafb"]')).toHaveCount(1);
   await expect(page.locator('svg rect[fill="#ef4444"]')).toHaveCount(1);
+
+  await submitVoiceText(page, '打开状态信息');
+  const statusDialog = page.getByRole('dialog', { name: '状态信息' });
+  await expect(statusDialog.getByText('AI 配方布局')).toBeVisible();
+  await expect(statusDialog.getByText('create_asset_recipe:戴帽子的小猫')).toBeVisible();
+  await expect(statusDialog.getByText('4/4 部件')).toBeVisible();
 
   const beforeMove = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.x) ?? []);
   await submitVoiceText(page, '把小猫向右移动一点');
   await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 4 个图形。');
   const afterMove = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.x) ?? []);
   expect(afterMove.every((x, index) => x > (beforeMove[index] ?? x))).toBe(true);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('AI 返回重叠坐标时系统本地布局会重新排开', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        schemaVersion: '2.0',
+        rawIntentSummary: 'create_asset_recipe:花朵, recipe 5',
+        intent: {
+          type: 'create_asset_recipe',
+          name: '花朵',
+          recipe: [
+            { shape: 'circle', name: '花心', partName: '花蕊', color: '#facc15', slot: 'center', position: { x: 100, y: 100 }, width: 60, height: 60 },
+            { shape: 'ellipse', name: '上花瓣', partName: '花瓣', color: '#ec4899', slot: 'top', position: { x: 100, y: 100 }, width: 70, height: 42 },
+            { shape: 'ellipse', name: '下花瓣', partName: '花瓣', color: '#ec4899', slot: 'bottom', position: { x: 100, y: 100 }, width: 70, height: 42 },
+            { shape: 'ellipse', name: '左花瓣', partName: '花瓣', color: '#ec4899', slot: 'left', position: { x: 100, y: 100 }, width: 70, height: 42 },
+            { shape: 'ellipse', name: '右花瓣', partName: '花瓣', color: '#ec4899', slot: 'right', position: { x: 100, y: 100 }, width: 70, height: 42 }
+          ]
+        }
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一朵花');
+  await expect(systemFeedback(page)).toContainText('已拆解并执行 5 个绘图步骤。');
+  const centers = await page.evaluate(() => {
+    const objects = window.__speak2drawTest?.getScene().objects ?? [];
+    return [...new Set(objects.map((object) => `${Math.round(object.x + object.width / 2)}:${Math.round(object.y + object.height / 2)}`))];
+  });
+  expect(centers.length).toBeGreaterThan(3);
+
+  await submitVoiceText(page, '打开状态信息');
+  const statusDialog = page.getByRole('dialog', { name: '状态信息' });
+  await expect(statusDialog.getByText('AI 配方布局')).toBeVisible();
+  await expect(statusDialog.getByText('create_asset_recipe:花朵')).toBeVisible();
+  await expect(statusDialog.getByText('5/5 部件')).toBeVisible();
   expect(consoleErrors).toEqual([]);
 });
 

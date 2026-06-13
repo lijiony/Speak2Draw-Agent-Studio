@@ -6,6 +6,8 @@ import type {
   DrawingRecipeItem,
   LayerDirection,
   ObjectSelector,
+  RecipeSize,
+  RecipeSlot,
   SceneState,
   ShapeKind
 } from '../domain/types';
@@ -71,7 +73,7 @@ export interface AiClarificationContext {
 }
 
 export interface AiIntentEnvelope {
-  schemaVersion: typeof AI_INTENT_SCHEMA_VERSION;
+  schemaVersion: typeof AI_INTENT_SCHEMA_VERSION | '1.0';
   intent: DrawingIntent;
 }
 
@@ -80,6 +82,8 @@ export interface AiIntentSuccessPayload {
   provider: 'deepseek';
   model: string;
   intent: DrawingIntent;
+  schemaVersion?: string;
+  rawIntentSummary?: string;
 }
 
 export interface AiIntentFailurePayload {
@@ -90,7 +94,8 @@ export interface AiIntentFailurePayload {
 
 export type AiIntentResponsePayload = AiIntentSuccessPayload | AiIntentFailurePayload;
 
-export const AI_INTENT_SCHEMA_VERSION = '1.0';
+export const AI_INTENT_SCHEMA_VERSION = '2.0';
+export const LEGACY_AI_INTENT_SCHEMA_VERSION = '1.0';
 
 const INTENT_TYPES: DrawingIntentType[] = [
   'sequence',
@@ -123,6 +128,8 @@ const INTENT_TYPES: DrawingIntentType[] = [
 ];
 
 const SHAPES: ShapeKind[] = ['circle', 'rectangle', 'ellipse', 'line', 'triangle', 'text'];
+const RECIPE_SLOTS: RecipeSlot[] = ['center', 'top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const RECIPE_SIZES: RecipeSize[] = ['tiny', 'small', 'medium', 'large'];
 const DIRECTIONS: Array<NonNullable<DrawingIntent['direction']>> = ['left', 'right', 'up', 'down', 'center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const LAYERS: LayerDirection[] = ['front', 'back', 'forward', 'backward'];
 const ALIGNMENTS: AlignmentMode[] = ['left', 'center-x', 'right', 'top', 'center-y', 'bottom'];
@@ -167,7 +174,11 @@ export const AI_INTENT_JSON_SCHEMA = {
           color: '#RRGGBB',
           strokeColor: '#RRGGBB',
           strokeWidth: '1..16',
-          position: { x: '0..940', y: '0..580' },
+          slot: RECIPE_SLOTS,
+          relativeTo: 'string; existing partName/name or earlier recipe part',
+          offset: { x: '-1..1', y: '-1..1' },
+          size: RECIPE_SIZES,
+          position: { x: '0..940 optional legacy hint', y: '0..580 optional legacy hint' },
           width: '20..420',
           height: '20..320',
           text: 'string'
@@ -238,17 +249,20 @@ export const buildDeepSeekMessages = (payload: AiIntentRequestPayload) => [
   {
     role: 'system',
     content:
-      '你是 Speak2Draw 的中文语音绘图意图解析器。只输出符合 schema 的 JSON，不要解释。' +
+      '你是 Speak2Draw 的中文语音绘图意图解析器。只输出符合 schema 的 JSON，不要解释，不要 Markdown，不要代码块。' +
       `固定输出格式：{"schemaVersion":"${AI_INTENT_SCHEMA_VERSION}","intent":{...}}。` +
       `JSON schema 摘要：${JSON.stringify(AI_INTENT_JSON_SCHEMA)}。` +
       `把用户语音转换成一个 DrawingIntent。允许的 type：${INTENT_TYPES.join(', ')}。` +
       '如果请求包含 clarificationContext，说明上一轮语音没有执行成功；请把 originalTranscript、question 和本轮 transcript 合并理解，优先输出可执行意图。' +
       'shape 只能是 circle, rectangle, ellipse, line, triangle, text。direction 只能是 left, right, up, down, center, top-left, top-right, bottom-left, bottom-right。' +
+      '严禁返回 SVG path、HTML、script、style、外链图片、base64 图片或任意可执行内容。所有绘图都必须通过白名单 recipe 图形部件表达。' +
       '如果用户要给已有图形改名、复制它、或者修改文字内容，请分别返回 rename_object、duplicate_object、update_text。' +
       '如果用户要成组、取消分组、对齐或均匀分布图形，请分别返回 group_objects、ungroup_objects、align_objects、distribute_objects。alignment 只能是 left, center-x, right, top, center-y, bottom；axis 只能是 horizontal 或 vertical。' +
       'scene.assets 是当前画布的素材组和部件树。用户说“选择房子的窗户”“删除帽子”“把猫的帽子换掉”时必须使用局部 selector，例如 by_id 或 by_part_name，并设置 scope:"part"，不要误删整组。用户说“整个房子”“整只猫”“选择房子”时才使用 scope:"group"。' +
-      '当用户要画猫、船、云、人物等内置图形没有的元素时，优先返回 create_asset_recipe，并在 intent.name 写入整个素材名称，例如“猫”或“戴帽子的猫”，再用 recipe 数组拆成多个安全矢量对象。recipe 每项只允许 shape, name, partName, color, strokeColor, strokeWidth, position, width, height, text。系统会把这些部件按 intent.name 成组。' +
-      '当用户要求删除或替换已有素材的一部分，例如“把帽子删去”“帽子不好看换一个”，优先返回 revise_asset_part。删除用 operation:"delete"；替换用 operation:"replace" 并提供 recipe，attachTo 指向原素材组。' +
+      '当用户要画猫、船、云、人物、花瓶等内置图形没有的元素时，优先返回 create_asset_recipe，并在 intent.name 写入整个素材名称，再用 recipe 数组拆成多个可编辑部件。复杂对象必须拆成脸、耳朵、帽子、窗户、门、帆、花瓣等局部 partName。' +
+      'recipe 每项只允许 shape, name, partName, color, strokeColor, strokeWidth, slot, relativeTo, offset, size, position, width, height, text。优先使用 slot/relativeTo/size/offset 描述语义位置，少用 position；position 只会被系统当作参考建议，不是最终坐标。slot 只能是 center, top, bottom, left, right, top-left, top-right, bottom-left, bottom-right。size 只能是 tiny, small, medium, large。offset.x/y 必须在 -1 到 1 之间。' +
+      'relativeTo 应指向同一 recipe 中较早出现的 partName/name，或 scene.assets 中已有部件名。例如帽子 relativeTo:"脸" slot:"top"，眼睛 relativeTo:"脸" slot:"left/right"，窗户 relativeTo:"墙体" slot:"left/right"。' +
+      '当用户要求删除或替换已有素材的一部分，例如“把帽子删去”“帽子不好看换一个”，必须优先返回 revise_asset_part。删除用 operation:"delete"；替换用 operation:"replace" 并提供 recipe，attachTo 指向原素材组。局部编辑不能误删或替换整组。' +
       '颜色使用十六进制，例如红色 #ef4444、蓝色 #2563eb、绿色 #16a34a、黄色 #facc15、黑色 #111827、紫色 #7c3aed、粉色 #ec4899。' +
       '如果用户提到已有对象名称，使用 selector: { "mode": "by_name", "name": "对象名" }。如果包含多个动作，可以返回 {"type":"sequence","intents":[...]}。如果无法安全执行，返回 {"type":"unknown","reason":"..."}。'
   },
@@ -261,6 +275,22 @@ export const buildDeepSeekMessages = (payload: AiIntentRequestPayload) => [
 export const parseDeepSeekIntentContent = (content: string, rawText: string): DrawingIntent | null => {
   const parsed = parseJsonObject(content);
   return normalizeAiIntent(parsed, rawText);
+};
+
+export const summarizeDeepSeekIntentContent = (content: string) => {
+  const parsed = parseJsonObject(content);
+  if (!isRecord(parsed)) return undefined;
+  const intentValue = isRecord(parsed.intent) ? parsed.intent : parsed;
+  const type = typeof intentValue.type === 'string' ? intentValue.type : 'unknown';
+  const name = typeof intentValue.name === 'string' ? intentValue.name.slice(0, 24) : '';
+  const recipeCount = Array.isArray(intentValue.recipe) ? intentValue.recipe.length : 0;
+  const childCount = Array.isArray(intentValue.intents) ? intentValue.intents.length : 0;
+  return `${type}${name ? `:${name}` : ''}${recipeCount ? `, recipe ${recipeCount}` : ''}${childCount ? `, steps ${childCount}` : ''}`;
+};
+
+export const getAiIntentSchemaVersion = (content: string) => {
+  const parsed = parseJsonObject(content);
+  return isRecord(parsed) && typeof parsed.schemaVersion === 'string' ? parsed.schemaVersion.slice(0, 12) : undefined;
 };
 
 export const normalizeAiIntent = (value: unknown, rawText: string): DrawingIntent | null => {
@@ -299,7 +329,7 @@ const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number):
   if (typeof value.alignment === 'string' && ALIGNMENTS.includes(value.alignment as AlignmentMode)) intent.alignment = value.alignment as AlignmentMode;
   if (typeof value.axis === 'string' && AXES.includes(value.axis as DistributionAxis)) intent.axis = value.axis as DistributionAxis;
 
-  const selector = normalizeSelector(value.selector);
+  const selector = normalizeSelector(value.selector) ?? normalizeSelectorFromIntentFields(value);
   if (selector) intent.selector = selector;
   const attachTo = normalizeSelector(value.attachTo);
   if (attachTo) intent.attachTo = attachTo;
@@ -313,13 +343,14 @@ const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number):
 
   const recipe = normalizeRecipe(value.recipe);
   if (recipe.length > 0) intent.recipe = recipe;
+  if (type === 'revise_asset_part' && !intent.operation && intent.recipe?.length) intent.operation = 'replace';
 
   return isIntentStructurallyExecutable(intent) ? intent : null;
 };
 
 const unwrapAiIntentValue = (value: unknown) => {
   if (!isRecord(value)) return value;
-  if (value.schemaVersion === AI_INTENT_SCHEMA_VERSION && isRecord(value.intent)) return value.intent;
+  if ((value.schemaVersion === AI_INTENT_SCHEMA_VERSION || value.schemaVersion === LEGACY_AI_INTENT_SCHEMA_VERSION) && isRecord(value.intent)) return value.intent;
   return value;
 };
 
@@ -373,6 +404,18 @@ const normalizeRecipe = (recipe: unknown): DrawingRecipeItem[] => {
       if (typeof item.width === 'number') normalized.width = clampNumber(item.width, 20, 420);
       if (typeof item.height === 'number') normalized.height = clampNumber(item.height, 20, 320);
       if (typeof item.text === 'string') normalized.text = item.text.slice(0, 80);
+      if (typeof item.slot === 'string' && RECIPE_SLOTS.includes(item.slot as RecipeSlot)) normalized.slot = item.slot as RecipeSlot;
+      if (typeof item.relativeTo === 'string') {
+        const relativeTo = item.relativeTo.trim().slice(0, 24);
+        if (relativeTo) normalized.relativeTo = relativeTo;
+      }
+      if (typeof item.size === 'string' && RECIPE_SIZES.includes(item.size as RecipeSize)) normalized.size = item.size as RecipeSize;
+      if (isRecord(item.offset) && typeof item.offset.x === 'number' && typeof item.offset.y === 'number') {
+        normalized.offset = {
+          x: clampNumber(item.offset.x, -1, 1),
+          y: clampNumber(item.offset.y, -1, 1)
+        };
+      }
       if (isRecord(item.position) && typeof item.position.x === 'number' && typeof item.position.y === 'number') {
         normalized.position = {
           x: clampNumber(item.position.x, 0, 940),
@@ -397,8 +440,9 @@ const normalizeSelector = (selector: unknown): ObjectSelector | undefined => {
     const groupId = selector.groupId.trim().slice(0, 40);
     return groupId ? { mode: 'by_group_id', groupId, scope: 'group' } : undefined;
   }
-  if (selector.mode === 'by_part_name' && typeof selector.name === 'string') {
-    const name = selector.name.trim().slice(0, 24);
+  if (selector.mode === 'by_part_name' && (typeof selector.name === 'string' || typeof selector.partName === 'string')) {
+    const partNameSource = typeof selector.name === 'string' ? selector.name : typeof selector.partName === 'string' ? selector.partName : '';
+    const name = partNameSource.trim().slice(0, 24);
     const withinGroupName = typeof selector.withinGroupName === 'string' ? selector.withinGroupName.trim().slice(0, 24) : undefined;
     return name ? { mode: 'by_part_name', name, ...(withinGroupName ? { withinGroupName } : {}), scope: 'part' } : undefined;
   }
@@ -421,6 +465,32 @@ const normalizeSelector = (selector: unknown): ObjectSelector | undefined => {
     return next.shape || next.color ? next : undefined;
   }
   return undefined;
+};
+
+const normalizeSelectorFromIntentFields = (value: Record<string, unknown>): ObjectSelector | undefined => {
+  const partNameSource =
+    typeof value.partName === 'string'
+      ? value.partName
+      : typeof value.targetPartName === 'string'
+        ? value.targetPartName
+        : typeof value.part === 'string'
+          ? value.part
+          : undefined;
+  if (!partNameSource) return undefined;
+  const name = partNameSource.trim().slice(0, 24);
+  if (!name) return undefined;
+  const withinGroupName =
+    typeof value.withinGroupName === 'string'
+      ? value.withinGroupName.trim().slice(0, 24)
+      : typeof value.groupName === 'string'
+        ? value.groupName.trim().slice(0, 24)
+        : undefined;
+  return {
+    mode: 'by_part_name',
+    name,
+    ...(withinGroupName ? { withinGroupName } : {}),
+    scope: 'part'
+  };
 };
 
 const buildAssetTree = (scene: SceneState): AiIntentRequestPayload['scene']['assets'] => {
