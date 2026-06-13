@@ -5801,3 +5801,251 @@ h2 {
 .app-shell .command-feed button {
   grid-template-columns: 18px minmax(0, 1fr) 16px;
 }
+
+/* Narrower control rail and quieter scrollbars. */
+.app-shell .studio-console,
+.app-shell .studio-console.layout-focus,
+.app-shell .studio-console.layout-bottom-inspector {
+  grid-template-columns: 324px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.app-shell .studio-console.layout-side-inspector {
+  grid-template-columns: 324px minmax(0, 1fr) 300px;
+  gap: 12px;
+}
+
+.app-shell .diagnostics-column,
+.app-shell .studio-main,
+.app-shell .object-workbench.side,
+.app-shell .object-workbench.bottom,
+.status-overlay,
+.settings-workspace .settings-nav,
+.settings-workspace .settings-panel,
+.settings-workspace .settings-diagnostics {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.12) transparent;
+}
+
+.app-shell .diagnostics-column {
+  padding-right: 3px;
+  scrollbar-gutter: stable;
+}
+
+.app-shell .studio-main,
+.app-shell .object-workbench.side,
+.app-shell .object-workbench.bottom,
+.status-overlay,
+.settings-workspace .settings-nav,
+.settings-workspace .settings-panel,
+.settings-workspace .settings-diagnostics {
+  padding-right: max(3px, env(safe-area-inset-right));
+  scrollbar-gutter: stable;
+}
+
+.app-shell .diagnostics-column:hover,
+.app-shell .diagnostics-column:focus-within,
+.app-shell .studio-main:hover,
+.app-shell .studio-main:focus-within,
+.app-shell .object-workbench.side:hover,
+.app-shell .object-workbench.side:focus-within,
+.app-shell .object-workbench.bottom:hover,
+.app-shell .object-workbench.bottom:focus-within,
+.status-overlay:hover,
+.status-overlay:focus-within,
+.settings-workspace .settings-nav:hover,
+.settings-workspace .settings-nav:focus-within,
+.settings-workspace .settings-panel:hover,
+.settings-workspace .settings-panel:focus-within,
+.settings-workspace .settings-diagnostics:hover,
+.settings-workspace .settings-diagnostics:focus-within {
+  scrollbar-color: rgba(100, 116, 139, 0.38) transparent;
+}
+
+.app-shell .diagnostics-column::-webkit-scrollbar,
+.app-shell .studio-main::-webkit-scrollbar,
+.app-shell .object-workbench.side::-webkit-scrollbar,
+.app-shell .object-workbench.bottom::-webkit-scrollbar,
+.status-overlay::-webkit-scrollbar,
+.settings-workspace .settings-nav::-webkit-scrollbar,
+.settings-workspace .settings-panel::-webkit-scrollbar,
+.settings-workspace .settings-diagnostics::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.app-shell .diagnostics-column::-webkit-scrollbar-track,
+.app-shell .studio-main::-webkit-scrollbar-track,
+.app-shell .object-workbench.side::-webkit-scrollbar-track,
+.app-shell .object-workbench.bottom::-webkit-scrollbar-track,
+.status-overlay::-webkit-scrollbar-track,
+.settings-workspace .settings-nav::-webkit-scrollbar-track,
+.settings-workspace .settings-panel::-webkit-scrollbar-track,
+.settings-workspace .settings-diagnostics::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell .diagnostics-column::-webkit-scrollbar-thumb,
+.app-shell .studio-main::-webkit-scrollbar-thumb,
+.app-shell .object-workbench.side::-webkit-scrollbar-thumb,
+.app-shell .object-workbench.bottom::-webkit-scrollbar-thumb,
+.status-overlay::-webkit-scrollbar-thumb,
+.settings-workspace .settings-nav::-webkit-scrollbar-thumb,
+.settings-workspace .settings-panel::-webkit-scrollbar-thumb,
+.settings-workspace .settings-diagnostics::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: transparent;
+}
+
+.app-shell .diagnostics-column:hover::-webkit-scrollbar-thumb,
+.app-shell .diagnostics-column:focus-within::-webkit-scrollbar-thumb,
+.app-shell .studio-main:hover::-webkit-scrollbar-thumb,
+.app-shell .studio-main:focus-within::-webkit-scrollbar-thumb,
+.app-shell .object-workbench.side:hover::-webkit-scrollbar-thumb,
+.app-shell .object-workbench.side:focus-within::-webkit-scrollbar-thumb,
+.app-shell .object-workbench.bottom:hover::-webkit-scrollbar-thumb,
+.app-shell .object-workbench.bottom:focus-within::-webkit-scrollbar-thumb,
+.status-overlay:hover::-webkit-scrollbar-thumb,
+.status-overlay:focus-within::-webkit-scrollbar-thumb,
+.settings-workspace .settings-nav:hover::-webkit-scrollbar-thumb,
+.settings-workspace .settings-nav:focus-within::-webkit-scrollbar-thumb,
+.settings-workspace .settings-panel:hover::-webkit-scrollbar-thumb,
+.settings-workspace .settings-panel:focus-within::-webkit-scrollbar-thumb,
+.settings-workspace .settings-diagnostics:hover::-webkit-scrollbar-thumb,
+.settings-workspace .settings-diagnostics:focus-within::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.42);
+}
+
+@media (max-width: 1240px) {
+  .app-shell .studio-console,
+  .app-shell .studio-console.layout-focus,
+  .app-shell .studio-console.layout-bottom-inspector {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+
+  .app-shell .studio-console.layout-side-inspector {
+    grid-template-columns: 300px minmax(0, 1fr) 270px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .app-shell .studio-console.layout-side-inspector {
+    grid-template-columns: 286px minmax(0, 1fr);
+  }
+
+  .app-shell .studio-console,
+  .app-shell .studio-console.layout-focus,
+  .app-shell .studio-console.layout-bottom-inspector {
+    grid-template-columns: 286px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell .studio-console,
+  .app-shell .studio-console.layout-focus,
+  .app-shell .studio-console.layout-side-inspector,
+  .app-shell .studio-console.layout-bottom-inspector {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell .diagnostics-column {
+    padding-right: 3px;
+  }
+}
+
+/* Compact voice controls for the narrower rail. */
+.app-shell .control-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas:
+    "status status status"
+    "transcript transcript transcript"
+    "fast balanced patient";
+  gap: 6px;
+}
+
+.app-shell .control-strip > .status-select {
+  grid-area: status;
+}
+
+.app-shell .control-strip > .policy-pill {
+  grid-area: fast;
+}
+
+.app-shell .control-strip > .transcript-command {
+  grid-area: transcript;
+}
+
+.app-shell .control-strip > .mode-pill.primary {
+  grid-area: balanced;
+}
+
+.app-shell .control-strip > .mode-pill:not(.primary) {
+  grid-area: patient;
+}
+
+.app-shell .control-strip .policy-pill,
+.app-shell .control-strip .mode-pill {
+  min-width: 0;
+  justify-content: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.app-shell .control-strip .policy-pill svg {
+  display: none;
+}
+
+.app-shell .control-strip .mode-pill svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+}
+
+.app-shell .control-strip .mode-pill svg:last-child {
+  display: none;
+}
+
+.app-shell .control-strip .policy-pill span,
+.app-shell .control-strip .mode-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-shell .strategy-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.app-shell .strategy-tabs span,
+.app-shell .strategy-tabs strong {
+  justify-content: center;
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.app-shell .voice-core {
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  overflow: visible;
+  padding-left: 8px;
+}
+
+.app-shell .voice-orb {
+  width: 44px;
+  height: 44px;
+  box-shadow: inset 0 0 0 5px rgba(255, 255, 255, 0.8), 0 0 0 4px rgba(15, 118, 110, 0.1);
+}
+
+.app-shell .voice-orb svg {
+  width: 20px;
+  height: 20px;
+}
