@@ -12,7 +12,14 @@ export interface MicrophoneTestResult extends MicrophoneLevel {
   action: string;
 }
 
-export const runMicrophoneInputTest = async (durationMs = 3000): Promise<MicrophoneTestResult> => {
+export interface MicrophoneInputSample extends MicrophoneLevel {
+  elapsedMs: number;
+}
+
+export const runMicrophoneInputTest = async (
+  durationMs = 3000,
+  onSample?: (sample: MicrophoneInputSample) => void
+): Promise<MicrophoneTestResult> => {
   if (!navigator.mediaDevices?.getUserMedia) {
     return {
       ok: false,
@@ -58,6 +65,11 @@ export const runMicrophoneInputTest = async (durationMs = 3000): Promise<Microph
       peak = Math.max(peak, level);
       total += level;
       samples += 1;
+      onSample?.({
+        peak,
+        average: total / samples,
+        elapsedMs: performance.now() - startedAt
+      });
       await delay(80);
     }
 

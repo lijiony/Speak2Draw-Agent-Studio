@@ -28,9 +28,10 @@ export const resolveDeepSeekIntent = async (
   const apiKey = env.DEEPSEEK_API_KEY;
   if (!apiKey) return { ok: false, provider: 'local', reason: '未配置 DEEPSEEK_API_KEY。' };
 
-  const model = env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
-  const baseUrl = trimTrailingSlash(env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com');
-  const timeoutMs = Number(env.DEEPSEEK_TIMEOUT_MS || 8000);
+  const model = safeModel(env.DEEPSEEK_MODEL);
+  const baseUrl = safeDeepSeekBaseUrl(env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com');
+  if (!baseUrl) return { ok: false, provider: 'deepseek', reason: 'DeepSeek base URL 不在允许范围内。' };
+  const timeoutMs = safeTimeoutMs(env.DEEPSEEK_TIMEOUT_MS);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -73,11 +74,33 @@ export const isAiIntentPayload = (payload: unknown): payload is AiIntentRequestP
       typeof payload === 'object' &&
       'transcript' in payload &&
       typeof payload.transcript === 'string' &&
+      payload.transcript.length <= 500 &&
       'scene' in payload &&
       payload.scene &&
       typeof payload.scene === 'object' &&
       'objects' in payload.scene &&
-      Array.isArray(payload.scene.objects)
+      Array.isArray(payload.scene.objects) &&
+      payload.scene.objects.length <= 80
   );
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+const safeTimeoutMs = (value?: string) => {
+  const parsed = Number(value || 8000);
+  if (!Number.isFinite(parsed)) return 8000;
+  return Math.round(Math.min(15000, Math.max(1500, parsed)));
+};
+
+const safeDeepSeekBaseUrl = (value: string) => {
+  try {
+    const url = new URL(trimTrailingSlash(value));
+    if (url.protocol !== 'https:') return null;
+    if (url.hostname !== 'api.deepseek.com') return null;
+    if (url.pathname !== '' && url.pathname !== '/') return null;
+    return trimTrailingSlash(url.toString());
+  } catch {
+    return null;
+  }
+};
+
+const safeModel = (value?: string) =>
+  value === 'deepseek-v4-pro' || value === 'deepseek-v4-flash' ? value : 'deepseek-v4-flash';

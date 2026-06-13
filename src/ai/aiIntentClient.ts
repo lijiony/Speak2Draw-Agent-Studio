@@ -8,6 +8,13 @@ type PlanLike = {
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+export interface AiRequestOptions {
+  baseUrl?: string;
+  model?: string;
+  timeoutMs?: number;
+  sessionApiKey?: string;
+}
+
 export const shouldUseAiIntentFallback = (intent: DrawingIntent, plan: PlanLike, transcript: VoiceTranscript) => {
   if (transcript.confidence > 0 && transcript.confidence < 0.55) return false;
   return intent.type === 'unknown' || intent.type === 'clarify' || Boolean(plan.needsClarification);
@@ -18,14 +25,13 @@ export const resolveAiIntent = async (
   scene: SceneState,
   localReason?: string,
   clarificationContext?: AiClarificationContext,
+  options?: AiRequestOptions,
   fetcher: FetchLike = fetch
 ): Promise<AiIntentResponsePayload> => {
   try {
     const response = await fetcher('/api/ai/intent', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: buildAiHeaders(options),
       body: JSON.stringify(toAiIntentRequestPayload(transcript.text, scene, localReason, clarificationContext))
     });
 
@@ -71,3 +77,14 @@ export const resolveAiIntent = async (
 };
 
 const sanitizeReason = (reason: string) => reason.trim().slice(0, 120) || 'AI 指令解析暂时不可用。';
+
+const buildAiHeaders = (options?: AiRequestOptions) => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  if (options?.baseUrl) headers['X-Speak2Draw-Base-URL'] = options.baseUrl;
+  if (options?.model) headers['X-Speak2Draw-Model'] = options.model;
+  if (options?.timeoutMs) headers['X-Speak2Draw-Timeout-MS'] = String(options.timeoutMs);
+  if (options?.sessionApiKey) headers['X-Speak2Draw-Session-Key'] = options.sessionApiKey;
+  return headers;
+};

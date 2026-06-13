@@ -21,6 +21,16 @@ describe('planCommands', () => {
     expect(plan.commands.every((command) => command.type === 'create_object')).toBe(true);
   });
 
+  it('内置房子部件会自动组成同一个素材组', () => {
+    const intent: DrawingIntent = { type: 'create_complex_scene', rawText: '画一个房子' };
+    const plan = planCommands(intent, createEmptyScene());
+    const houseObjects = plan.commands.map((command) => command.object).filter((object) => object?.name.includes('房子'));
+
+    expect(houseObjects).toHaveLength(4);
+    expect(houseObjects.map((object) => object?.groupName)).toEqual(['房子', '房子', '房子', '房子']);
+    expect(new Set(houseObjects.map((object) => object?.groupId)).size).toBe(1);
+  });
+
   it('没有对象时，编辑指令要求澄清', () => {
     const intent: DrawingIntent = { type: 'move_object', rawText: '向右移动一点', selector: { mode: 'selected' }, direction: 'right' };
     const plan = planCommands(intent, createEmptyScene());
@@ -87,6 +97,65 @@ describe('planCommands', () => {
     );
 
     expect(plan.commands.map((command) => command.object?.groupName)).toEqual(['戴帽子的猫', '戴帽子的猫']);
+  });
+
+  it('AI 素材配方可以附加到已有素材组', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '小猫脸', groupId: 'asset-cat', groupName: '小猫', partId: 'part-face', partName: '脸' })
+      }
+    ]);
+    const plan = planCommands(
+      {
+        type: 'create_asset_recipe',
+        rawText: '给小猫加帽子',
+        attachTo: { mode: 'by_group_id', groupId: 'asset-cat', scope: 'group' },
+        recipe: [
+          { shape: 'rectangle', name: '小猫帽檐', partName: '帽子', color: '#2563eb' },
+          { shape: 'rectangle', name: '小猫帽子', partName: '帽子', color: '#2563eb' }
+        ]
+      },
+      scene
+    );
+
+    expect(plan.commands).toHaveLength(2);
+    expect(plan.commands.map((command) => command.object?.groupId)).toEqual(['asset-cat', 'asset-cat']);
+    expect(plan.commands.map((command) => command.object?.groupName)).toEqual(['小猫', '小猫']);
+    expect(new Set(plan.commands.map((command) => command.object?.partId)).size).toBe(1);
+  });
+
+  it('AI 局部替换会先删除旧部件再附加新配方', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '小猫脸', groupId: 'asset-cat', groupName: '小猫', partId: 'part-face', partName: '脸' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-2', name: '小猫帽子', groupId: 'asset-cat', groupName: '小猫', partId: 'part-hat', partName: '帽子' })
+      }
+    ]);
+    const plan = planCommands(
+      {
+        type: 'revise_asset_part',
+        rawText: '帽子不好看换一个',
+        operation: 'replace',
+        selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫', scope: 'part' },
+        recipe: [{ shape: 'rectangle', name: '蓝色帽子', partName: '帽子', color: '#2563eb' }]
+      },
+      scene
+    );
+
+    expect(plan.commands[0]).toMatchObject({
+      type: 'delete_object',
+      selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫', scope: 'part' }
+    });
+    expect(plan.commands[1].object).toMatchObject({
+      groupId: 'asset-cat',
+      groupName: '小猫',
+      partName: '帽子'
+    });
   });
 
   it('创建图形时会保留自定义对象名称', () => {
@@ -258,5 +327,24 @@ describe('planCommands', () => {
     expect(scenePlan.message).toContain('画布里有 1 个图形：红色圆形');
     expect(selectionPlan.message).toContain('当前选中：红色圆形');
     expect(selectionPlan.message).toContain('颜色 红色');
+  });
+
+  it('查询选中对象时优先描述素材组', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-1', name: '房子墙体', groupId: 'asset-house', groupName: '房子' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-2', name: '房子窗户', groupId: 'asset-house', groupName: '房子' })
+      }
+    ]);
+    const selectedScene = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '房子' } });
+
+    const selectionPlan = planCommands({ type: 'describe_selection', rawText: '当前选中的是什么' }, selectedScene);
+
+    expect(selectionPlan.message).toContain('当前选中：房子素材组');
+    expect(selectionPlan.message).toContain('包含 2 个部件');
   });
 });

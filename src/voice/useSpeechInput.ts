@@ -60,6 +60,9 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   const interimCommitTimerRef = useRef<number | null>(null);
   const resultTimerRef = useRef<number | null>(null);
   const restartTimerRef = useRef<number | null>(null);
+  const startTimeoutRef = useRef<number | null>(null);
+  const permissionTimerRef = useRef<number | null>(null);
+  const startRequestIdRef = useRef(0);
   const setSpeechStatus = (nextStatus: SpeechStatus) => {
     statusRef.current = nextStatus;
     setStatus(nextStatus);
@@ -106,11 +109,71 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     }
   };
 
+  const clearStartTimeout = () => {
+    if (startTimeoutRef.current !== null) {
+      window.clearTimeout(startTimeoutRef.current);
+      startTimeoutRef.current = null;
+    }
+  };
+
+  const clearPermissionTimer = () => {
+    if (permissionTimerRef.current !== null) {
+      window.clearTimeout(permissionTimerRef.current);
+      permissionTimerRef.current = null;
+    }
+  };
+
   const clearRecognitionTimers = () => {
     clearSilenceTimer();
     clearInterimCommitTimer();
     clearResultTimer();
   };
+
+  const cancelStartRequest = () => {
+    startRequestIdRef.current += 1;
+    clearPermissionTimer();
+    clearStartTimeout();
+  };
+
+  useEffect(() => {
+    setDiagnostics((current) => ({
+      ...current,
+      policyMode
+    }));
+  }, [policyMode]);
+
+  const armStartTimeout = () => {
+    clearStartTimeout();
+    startTimeoutRef.current = window.setTimeout(() => {
+      if (statusRef.current !== 'starting') return;
+      listeningRequestedRef.current = false;
+      clearRecognitionTimers();
+      setSpeechStatus('error');
+      setError(mapSpeechError('speech-start-timeout'));
+      setActivity('麦克风权限已通过，但语音识别没有进入监听状态。请重试。');
+      markDiagnostics('error', { reason: '语音识别启动超时' });
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // Some browsers throw when stopping a recognizer that never fully started.
+      }
+    }, SPEECH_START_TIMEOUT_MS);
+  };
+
+  const armPermissionTimeout = (requestId: number) => {
+    clearPermissionTimer();
+    permissionTimerRef.current = window.setTimeout(() => {
+      if (requestId !== startRequestIdRef.current || statusRef.current !== 'starting') return;
+      listeningRequestedRef.current = false;
+      setSpeechStatus('error');
+      setError(mapSpeechError('speech-start-timeout'));
+      setActivity('麦克风权限请求没有及时返回，请检查浏览器权限提示后重试。');
+      markDiagnostics('error', { reason: '麦克风权限请求超时' });
+    }, MICROPHONE_PERMISSION_TIMEOUT_MS);
+  };
+
+  const isCurrentStartRequest = (requestId: number) =>
+    requestId === startRequestIdRef.current && listeningRequestedRef.current && statusRef.current === 'starting';
 
   const armSilenceTimer = () => {
     clearSilenceTimer();
@@ -176,14 +239,17 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
       transcriptAssemblerRef.current.reset();
       setSpeechStatus('starting');
       markDiagnostics('starting', { interimText: null, finalText: null, reason: null });
+      armStartTimeout();
       recognitionRef.current?.start();
     } catch (startError) {
+      clearStartTimeout();
       if (isInvalidStateError(startError)) {
         setSpeechStatus('listening');
         setActivity('语音识别已经在运行，请直接说出绘图指令。');
         return;
       }
       listeningRequestedRef.current = false;
+      cancelStartRequest();
       setSpeechStatus('error');
       setError(mapSpeechError(startError));
       setActivity('语音识别启动失败，请查看处理建议。');
@@ -201,6 +267,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     }
 
     recognition.onstart = () => {
+      clearStartTimeout();
       setSpeechStatus('listening');
       setActivity('语音识别已启动，请说出绘图指令。');
       markDiagnostics('listening', { interimText: null, finalText: null, reason: null });
@@ -253,6 +320,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
       emitTranscript(transcriptAssemblerRef.current.createFinal(snapshot.text, snapshot.confidence, snapshot.receivedAt));
     };
     recognition.onerror = (event) => {
+      clearStartTimeout();
       setError(mapSpeechError(event));
       setActivity('语音识别返回错误，请查看处理建议。');
       markDiagnostics('error', { reason: event.error });
@@ -265,6 +333,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
       }
     };
     recognition.onend = () => {
+      clearStartTimeout();
       clearRecognitionTimers();
       if (listeningRequestedRef.current && statusRef.current !== 'error') {
         setActivity('本轮监听已结束，正在继续等待下一条指令。');
@@ -285,6 +354,8 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
       try {
         clearRecognitionTimers();
         clearRestartTimer();
+        clearStartTimeout();
+        clearPermissionTimer();
         recognition.stop();
       } catch {
         // The recognizer can already be stopped during React cleanup.
@@ -308,18 +379,24 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
     }
 
     try {
+      const requestId = startRequestIdRef.current + 1;
+      startRequestIdRef.current = requestId;
       listeningRequestedRef.current = true;
       setSpeechStatus('starting');
       setError(null);
       setActivity('正在请求麦克风权限。');
       markDiagnostics('permission_requested', { interimText: null, finalText: null, reason: null });
+      armPermissionTimeout(requestId);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
+      clearPermissionTimer();
+      if (!isCurrentStartRequest(requestId)) return;
       setActivity('麦克风权限已通过，正在启动语音识别。');
       setError(null);
       markDiagnostics('permission_granted');
       startRecognition();
     } catch (startError) {
+      clearPermissionTimer();
       if (isInvalidStateError(startError)) {
         setError(null);
         setSpeechStatus('listening');
@@ -327,6 +404,7 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
         return;
       }
       listeningRequestedRef.current = false;
+      cancelStartRequest();
       setSpeechStatus('error');
       setError(mapSpeechError(startError));
       setActivity('语音识别启动失败，请查看处理建议。');
@@ -337,8 +415,11 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   const stop = () => {
     try {
       listeningRequestedRef.current = false;
+      cancelStartRequest();
       clearRecognitionTimers();
       clearRestartTimer();
+      clearStartTimeout();
+      clearPermissionTimer();
       recognitionRef.current?.stop();
     } catch {
       // Stop can be called while the recognizer is already idle.
@@ -351,6 +432,8 @@ export const useSpeechInput = (onTranscript: (transcript: VoiceTranscript) => vo
   return { status, error, activity, diagnostics, start, stop };
 };
 
+const SPEECH_START_TIMEOUT_MS = 4500;
+const MICROPHONE_PERMISSION_TIMEOUT_MS = 9000;
 const isLocalhost = () => ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 const isInvalidStateError = (error: unknown) =>
   error instanceof DOMException

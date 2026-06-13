@@ -44,6 +44,25 @@ describe('voice drawing flow', () => {
     expect(updated.scene.objects.filter((object) => object.name.includes('房子'))).toHaveLength(4);
   });
 
+  it('选择房子后移动会移动整个房子素材组', () => {
+    resetCommandIdsForTest();
+    const createInput = transcript('画一个房子');
+    const createPlan = planCommands(parseIntent(createInput), createEmptyScene());
+    const created = executeDrawingCommands(createEmptyScene(), createPlan.commands, createInput, createPlan);
+
+    const selectInput = transcript('选择房子');
+    const selectPlan = planCommands(parseIntent(selectInput), created.scene);
+    const selected = executeDrawingCommands(created.scene, selectPlan.commands, selectInput, selectPlan);
+
+    const moveInput = transcript('向右移动一点');
+    const movePlan = planCommands(parseIntent(moveInput), selected.scene);
+    const moved = executeDrawingCommands(selected.scene, movePlan.commands, moveInput, movePlan);
+
+    expect(selected.scene.objects.map((object) => object.groupName)).toEqual(['房子', '房子', '房子', '房子']);
+    expect(moved.ok).toBe(true);
+    expect(moved.scene.objects.every((object, index) => object.x > (selected.scene.objects[index]?.x ?? object.x))).toBe(true);
+  });
+
   it('执行普通多图形组合语音指令', () => {
     resetCommandIdsForTest();
     const input = transcript('画一个蓝色圆形和绿色矩形');

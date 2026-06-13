@@ -13,16 +13,55 @@ import type {
 export interface AiIntentRequestPayload {
   transcript: string;
   scene: {
+    revision: number;
     objects: Array<{
+      id: string;
       name: string;
+      groupId?: string;
       groupName?: string;
+      partId?: string;
+      partName?: string;
       kind: ShapeKind;
       fill: string;
+      stroke: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }>;
+    assets: Array<{
+      groupId: string;
+      groupName: string;
+      bounds: Bounds;
+      parts: Array<{
+        objectId: string;
+        name: string;
+        partId?: string;
+        partName?: string;
+        kind: ShapeKind;
+        fill: string;
+        bounds: Bounds;
+      }>;
     }>;
     selectedName: string | null;
+    selection: {
+      scope: 'group' | 'part';
+      id: string;
+      name: string;
+      groupId?: string;
+      groupName?: string;
+      partName?: string;
+    } | null;
   };
   localReason?: string;
   clarificationContext?: AiClarificationContext;
+}
+
+interface Bounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface AiClarificationContext {
@@ -58,6 +97,7 @@ const INTENT_TYPES: DrawingIntentType[] = [
   'create_shape',
   'create_complex_scene',
   'create_asset_recipe',
+  'revise_asset_part',
   'select_object',
   'rename_object',
   'duplicate_object',
@@ -102,16 +142,28 @@ export const AI_INTENT_JSON_SCHEMA = {
       name: 'string for object or asset group name',
       color: '#RRGGBB',
       selector: {
-        mode: ['selected', 'last', 'all', 'by_name', 'by_names', 'by_shape_color'],
+        mode: ['selected', 'last', 'all', 'by_name', 'by_names', 'by_shape_color', 'by_id', 'by_group_id', 'by_part_name'],
+        scope: ['group', 'part'],
+        objectId: 'stable object id from scene objects',
+        groupId: 'stable group id from scene assets',
         name: 'string',
+        withinGroupName: 'string',
         names: ['string'],
         shape: SHAPES,
         color: '#RRGGBB'
       },
+      attachTo: {
+        mode: ['by_group_id', 'by_name'],
+        groupId: 'stable group id',
+        name: 'asset group name',
+        scope: ['group']
+      },
+      operation: ['delete', 'replace'],
       recipe: [
         {
           shape: SHAPES,
           name: 'string',
+          partName: 'string for local editable part, such as 帽子 or 窗户',
           color: '#RRGGBB',
           strokeColor: '#RRGGBB',
           strokeWidth: '1..16',
@@ -128,6 +180,7 @@ export const AI_INTENT_JSON_SCHEMA = {
   intentRequirements: {
     create_shape: ['shape'],
     create_asset_recipe: ['name is recommended', 'recipe with at least one safe item'],
+    revise_asset_part: ['operation delete or replace', 'selector with part scope', 'recipe required when operation is replace'],
     rename_object: ['name'],
     duplicate_object: ['selector recommended'],
     update_text: ['text'],
@@ -153,13 +206,25 @@ export const toAiIntentRequestPayload = (
   localReason,
   clarificationContext,
   scene: {
+    revision: scene.revision,
     objects: scene.objects.map((object) => ({
+      id: object.id,
       name: object.name,
+      ...(object.groupId ? { groupId: object.groupId } : {}),
       ...(object.groupName ? { groupName: object.groupName } : {}),
+      ...(object.partId ? { partId: object.partId } : {}),
+      ...(object.partName ? { partName: object.partName } : {}),
       kind: object.kind,
-      fill: object.style.fill
+      fill: object.style.fill,
+      stroke: object.style.stroke,
+      x: Math.round(object.x),
+      y: Math.round(object.y),
+      width: Math.round(object.width),
+      height: Math.round(object.height)
     })),
-    selectedName: scene.selectedId ? scene.objects.find((object) => object.id === scene.selectedId)?.name ?? null : null
+    assets: buildAssetTree(scene),
+    selectedName: scene.selectedId ? scene.objects.find((object) => object.id === scene.selectedId)?.name ?? null : null,
+    selection: buildSelectionSummary(scene)
   }
 });
 
@@ -175,7 +240,9 @@ export const buildDeepSeekMessages = (payload: AiIntentRequestPayload) => [
       'shape 只能是 circle, rectangle, ellipse, line, triangle, text。direction 只能是 left, right, up, down, center, top-left, top-right, bottom-left, bottom-right。' +
       '如果用户要给已有图形改名、复制它、或者修改文字内容，请分别返回 rename_object、duplicate_object、update_text。' +
       '如果用户要成组、取消分组、对齐或均匀分布图形，请分别返回 group_objects、ungroup_objects、align_objects、distribute_objects。alignment 只能是 left, center-x, right, top, center-y, bottom；axis 只能是 horizontal 或 vertical。' +
-      '当用户要画猫、船、云、人物等内置图形没有的元素时，优先返回 create_asset_recipe，并在 intent.name 写入整个素材名称，例如“猫”或“戴帽子的猫”，再用 recipe 数组拆成多个安全矢量对象。recipe 每项只允许 shape, name, color, strokeColor, strokeWidth, position, width, height, text。系统会把这些部件按 intent.name 成组，后续用户可以按名称选择、移动、改色或删除整组素材。' +
+      'scene.assets 是当前画布的素材组和部件树。用户说“选择房子的窗户”“删除帽子”“把猫的帽子换掉”时必须使用局部 selector，例如 by_id 或 by_part_name，并设置 scope:"part"，不要误删整组。用户说“整个房子”“整只猫”“选择房子”时才使用 scope:"group"。' +
+      '当用户要画猫、船、云、人物等内置图形没有的元素时，优先返回 create_asset_recipe，并在 intent.name 写入整个素材名称，例如“猫”或“戴帽子的猫”，再用 recipe 数组拆成多个安全矢量对象。recipe 每项只允许 shape, name, partName, color, strokeColor, strokeWidth, position, width, height, text。系统会把这些部件按 intent.name 成组。' +
+      '当用户要求删除或替换已有素材的一部分，例如“把帽子删去”“帽子不好看换一个”，优先返回 revise_asset_part。删除用 operation:"delete"；替换用 operation:"replace" 并提供 recipe，attachTo 指向原素材组。' +
       '颜色使用十六进制，例如红色 #ef4444、蓝色 #2563eb、绿色 #16a34a、黄色 #facc15、黑色 #111827、紫色 #7c3aed、粉色 #ec4899。' +
       '如果用户提到已有对象名称，使用 selector: { "mode": "by_name", "name": "对象名" }。如果包含多个动作，可以返回 {"type":"sequence","intents":[...]}。如果无法安全执行，返回 {"type":"unknown","reason":"..."}。'
   },
@@ -215,6 +282,7 @@ const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number):
   if (typeof value.strokeWidth === 'number') intent.strokeWidth = clampNumber(value.strokeWidth, 1, 16);
   if (typeof value.scale === 'number') intent.scale = clampNumber(value.scale, 0.2, 4);
   if (typeof value.text === 'string') intent.text = value.text.slice(0, 80);
+  if (value.operation === 'delete' || value.operation === 'replace') intent.operation = value.operation;
   if (typeof value.shape === 'string' && SHAPES.includes(value.shape as ShapeKind)) intent.shape = value.shape as ShapeKind;
   if (typeof value.width === 'number') intent.width = clampNumber(value.width, 20, 420);
   if (typeof value.height === 'number') intent.height = clampNumber(value.height, 20, 320);
@@ -227,6 +295,8 @@ const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number):
 
   const selector = normalizeSelector(value.selector);
   if (selector) intent.selector = selector;
+  const attachTo = normalizeSelector(value.attachTo);
+  if (attachTo) intent.attachTo = attachTo;
 
   if (isRecord(value.position) && typeof value.position.x === 'number' && typeof value.position.y === 'number') {
     intent.position = {
@@ -253,6 +323,8 @@ const isIntentStructurallyExecutable = (intent: DrawingIntent) => {
       return Boolean(intent.shape);
     case 'create_asset_recipe':
       return Boolean(intent.recipe?.length);
+    case 'revise_asset_part':
+      return Boolean(intent.selector && (intent.operation === 'delete' || (intent.operation === 'replace' && intent.recipe?.length)));
     case 'rename_object':
       return Boolean(intent.name);
     case 'update_text':
@@ -288,6 +360,7 @@ const normalizeRecipe = (recipe: unknown): DrawingRecipeItem[] => {
         shape: item.shape as ShapeKind
       };
       if (typeof item.name === 'string') normalized.name = item.name.trim().slice(0, 24);
+      if (typeof item.partName === 'string') normalized.partName = item.partName.trim().slice(0, 24);
       if (typeof item.color === 'string' && isHexColor(item.color)) normalized.color = item.color;
       if (typeof item.strokeColor === 'string' && isHexColor(item.strokeColor)) normalized.strokeColor = item.strokeColor;
       if (typeof item.strokeWidth === 'number') normalized.strokeWidth = clampNumber(item.strokeWidth, 1, 16);
@@ -307,11 +380,25 @@ const normalizeRecipe = (recipe: unknown): DrawingRecipeItem[] => {
 
 const normalizeSelector = (selector: unknown): ObjectSelector | undefined => {
   if (!isRecord(selector) || typeof selector.mode !== 'string') return undefined;
-  if (selector.mode === 'last' || selector.mode === 'selected') return { mode: selector.mode };
-  if (selector.mode === 'all') return { mode: 'all' };
+  const scope = selector.scope === 'group' || selector.scope === 'part' ? selector.scope : undefined;
+  if (selector.mode === 'last' || selector.mode === 'selected') return { mode: selector.mode, ...(scope ? { scope } : {}) };
+  if (selector.mode === 'all') return { mode: 'all', ...(scope ? { scope } : {}) };
+  if (selector.mode === 'by_id' && typeof selector.objectId === 'string') {
+    const objectId = selector.objectId.trim().slice(0, 40);
+    return objectId ? { mode: 'by_id', objectId, scope: scope ?? 'part' } : undefined;
+  }
+  if (selector.mode === 'by_group_id' && typeof selector.groupId === 'string') {
+    const groupId = selector.groupId.trim().slice(0, 40);
+    return groupId ? { mode: 'by_group_id', groupId, scope: 'group' } : undefined;
+  }
+  if (selector.mode === 'by_part_name' && typeof selector.name === 'string') {
+    const name = selector.name.trim().slice(0, 24);
+    const withinGroupName = typeof selector.withinGroupName === 'string' ? selector.withinGroupName.trim().slice(0, 24) : undefined;
+    return name ? { mode: 'by_part_name', name, ...(withinGroupName ? { withinGroupName } : {}), scope: 'part' } : undefined;
+  }
   if (selector.mode === 'by_name' && typeof selector.name === 'string') {
     const name = selector.name.trim().slice(0, 24);
-    return name ? { mode: 'by_name', name } : undefined;
+    return name ? { mode: 'by_name', name, ...(scope ? { scope } : {}) } : undefined;
   }
   if (selector.mode === 'by_names' && Array.isArray(selector.names)) {
     const names = selector.names
@@ -319,15 +406,81 @@ const normalizeSelector = (selector: unknown): ObjectSelector | undefined => {
       .map((name) => name.trim().slice(0, 24))
       .filter(Boolean)
       .slice(0, 8);
-    return names.length > 0 ? { mode: 'by_names', names } : undefined;
+    return names.length > 0 ? { mode: 'by_names', names, ...(scope ? { scope } : {}) } : undefined;
   }
   if (selector.mode === 'by_shape_color') {
-    const next: ObjectSelector = { mode: 'by_shape_color' };
+    const next: ObjectSelector = { mode: 'by_shape_color', ...(scope ? { scope } : {}) };
     if (typeof selector.shape === 'string' && SHAPES.includes(selector.shape as ShapeKind)) next.shape = selector.shape as ShapeKind;
     if (typeof selector.color === 'string' && isHexColor(selector.color)) next.color = selector.color;
     return next.shape || next.color ? next : undefined;
   }
   return undefined;
+};
+
+const buildAssetTree = (scene: SceneState): AiIntentRequestPayload['scene']['assets'] => {
+  const groups = new Map<string, typeof scene.objects>();
+  for (const object of scene.objects) {
+    if (!object.groupId) continue;
+    groups.set(object.groupId, [...(groups.get(object.groupId) ?? []), object]);
+  }
+
+  return [...groups.entries()].map(([groupId, objects]) => ({
+    groupId,
+    groupName: objects[0]?.groupName ?? '素材组',
+    bounds: boundsForObjects(objects),
+    parts: objects.map((object) => ({
+      objectId: object.id,
+      name: object.name,
+      ...(object.partId ? { partId: object.partId } : {}),
+      ...(object.partName ? { partName: object.partName } : {}),
+      kind: object.kind,
+      fill: object.style.fill,
+      bounds: boundsForObjects([object])
+    }))
+  }));
+};
+
+const buildSelectionSummary = (scene: SceneState): AiIntentRequestPayload['scene']['selection'] => {
+  const selection = scene.selection;
+  if (!selection) return null;
+  if (selection.scope === 'group') {
+    const groupObjects = scene.objects.filter((object) => object.groupId === selection.groupId);
+    const anchor = groupObjects.find((object) => object.id === selection.anchorObjectId) ?? groupObjects[0];
+    return anchor
+      ? {
+          scope: 'group',
+          id: selection.groupId,
+          name: anchor.groupName ?? anchor.name,
+          groupId: selection.groupId,
+          groupName: anchor.groupName
+        }
+      : null;
+  }
+
+  const selected = scene.objects.find((object) => object.id === selection.objectId);
+  return selected
+    ? {
+        scope: 'part',
+        id: selected.id,
+        name: selected.partName ?? selected.name,
+        ...(selected.groupId ? { groupId: selected.groupId } : {}),
+        ...(selected.groupName ? { groupName: selected.groupName } : {}),
+        ...(selected.partName ? { partName: selected.partName } : {})
+      }
+    : null;
+};
+
+const boundsForObjects = (objects: SceneState['objects']): Bounds => {
+  const minX = Math.min(...objects.map((object) => object.x));
+  const minY = Math.min(...objects.map((object) => object.y));
+  const maxX = Math.max(...objects.map((object) => object.x + object.width));
+  const maxY = Math.max(...objects.map((object) => object.y + object.height));
+  return {
+    x: Math.round(minX),
+    y: Math.round(minY),
+    width: Math.round(maxX - minX),
+    height: Math.round(maxY - minY)
+  };
 };
 
 const parseJsonObject = (content: string) => {

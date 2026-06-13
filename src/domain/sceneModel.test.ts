@@ -93,6 +93,112 @@ describe('sceneModel', () => {
     expect(deleted.objects).toHaveLength(0);
   });
 
+  it('支持在素材组内选择和编辑局部部件', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', {
+          id: 'shape-1',
+          name: '房子墙体',
+          groupId: 'asset-house',
+          groupName: '房子',
+          partId: 'part-wall',
+          partName: '墙体',
+          x: 100,
+          fill: '#fef3c7'
+        })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', {
+          id: 'shape-2',
+          name: '房子窗户',
+          groupId: 'asset-house',
+          groupName: '房子',
+          partId: 'part-window',
+          partName: '窗户',
+          x: 140,
+          fill: '#bfdbfe'
+        })
+      }
+    ]);
+
+    const selectedWindow = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '房子窗户', scope: 'part' } });
+    const movedWindow = applyCommand(selectedWindow, { type: 'move_object', selector: { mode: 'selected' }, direction: 'right' });
+    const coloredWindow = applyCommand(movedWindow, {
+      type: 'update_object',
+      selector: { mode: 'selected' },
+      updates: { style: { fill: '#2563eb' } }
+    });
+
+    expect(selectedWindow.selection).toMatchObject({ scope: 'part', objectId: 'shape-2' });
+    expect(movedWindow.objects.find((object) => object.id === 'shape-2')?.x).toBeGreaterThan(140);
+    expect(movedWindow.objects.find((object) => object.id === 'shape-1')?.x).toBe(100);
+    expect(coloredWindow.objects.find((object) => object.id === 'shape-2')?.style.fill).toBe('#2563eb');
+    expect(coloredWindow.objects.find((object) => object.id === 'shape-1')?.style.fill).toBe('#fef3c7');
+  });
+
+  it('删除复合局部部件时保留同组其他对象', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '小猫脸', groupId: 'asset-cat', groupName: '小猫', partId: 'part-face', partName: '脸' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-2', name: '小猫帽檐', groupId: 'asset-cat', groupName: '小猫', partId: 'part-hat', partName: '帽子' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-3', name: '小猫帽子', groupId: 'asset-cat', groupName: '小猫', partId: 'part-hat', partName: '帽子' })
+      }
+    ]);
+
+    const deletedHat = applyCommand(scene, { type: 'delete_object', selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫' } });
+
+    expect(deletedHat.objects.map((object) => object.name)).toEqual(['小猫脸']);
+  });
+
+  it('整组选中时显式局部范围只会作用于锚点部件', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', {
+          id: 'shape-1',
+          name: '小猫脸',
+          groupId: 'asset-cat',
+          groupName: '小猫',
+          partId: 'part-face',
+          partName: '脸',
+          fill: '#f9fafb'
+        })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', {
+          id: 'shape-2',
+          name: '小猫帽子',
+          groupId: 'asset-cat',
+          groupName: '小猫',
+          partId: 'part-hat',
+          partName: '帽子',
+          fill: '#ef4444'
+        })
+      }
+    ]);
+
+    const selectedGroup = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '小猫' } });
+    const updatedAnchorPart = applyCommand(selectedGroup, {
+      type: 'update_object',
+      selector: { mode: 'selected', scope: 'part' },
+      updates: { style: { fill: '#2563eb' } }
+    });
+
+    expect(selectedGroup.selection).toMatchObject({ scope: 'group', groupId: 'asset-cat', anchorObjectId: 'shape-2' });
+    expect(updatedAnchorPart.objects.find((object) => object.name === '小猫帽子')?.style.fill).toBe('#2563eb');
+    expect(updatedAnchorPart.objects.find((object) => object.name === '小猫脸')?.style.fill).toBe('#f9fafb');
+  });
+
   it('支持把多个对象成组并取消成组', () => {
     const scene = applyCommandsAsTransaction(createEmptyScene(), [
       {

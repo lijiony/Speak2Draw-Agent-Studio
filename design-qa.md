@@ -15,6 +15,11 @@ final result: passed
 - 底部对象检查器已展示语音解析链路、当前对象属性、对象数量和建议语音操作。
 - 右侧已包含 AI 状态表、AI 复杂素材命令区、可点击命令列表和执行记录。
 - 响应式检查覆盖桌面、平板、手机，未发现横向滚动。
+- 二次整理后，左右两侧均收敛为单个连续面板，内部使用从中间向两侧淡化的分割线。
+- 三次增强后，左侧恢复语音控制台密度：麦克风动态环、实时识别文本、最近指令、语音活动、策略切换和麦克风实时音量电平。
+- 中央主画布下方新增画布操作条；当前对象检查器重排为对象摘要、属性表、语音执行链路、能力工具带和建议语音。
+- 右侧重构为 AI 执行证据面板：AI 解析状态、当前对象属性、指令执行链路、澄清流程、常用语音和执行记录。
+- 保留“少容器、多分区”原则，增加内容但避免每个小模块都变成独立卡片。
 
 ## 交互结果
 
@@ -23,6 +28,7 @@ final result: passed
 - 撤销、重做、清空画布、导出 SVG、帮助按钮均通过语音命令入口触发。
 - AI fallback、澄清、执行记录和系统反馈仍由真实状态驱动。
 - `window.__speak2drawTest`、`系统反馈`、`等待补充`、`AI 解析状态`、`绘图画布`、`语音状态` 等测试契约已保留。
+- `麦克风实时音量` 已有稳定 aria 标记，移动端端到端测试会检查动态电平条仍可见。
 
 ## 验证记录
 
@@ -30,9 +36,10 @@ final result: passed
 - `npm run build`：TypeScript 与 Vite 生产构建通过。
 - `npm run test:e2e`：18 条端到端测试通过。
 - Playwright 截图：
-  - `test-results/reference-redesign/desktop-2048.png`
-  - `test-results/reference-redesign/tablet-1100.png`
-  - `test-results/reference-redesign/mobile-390.png`
+  - `test-results/reference-rich-redesign-v2/desktop-2048.png`
+  - `test-results/reference-rich-redesign-v2/tablet-1100.png`
+  - `test-results/reference-rich-redesign-v2/mobile-390.png`
+- Playwright 布局指标：桌面、平板、手机均无横向滚动，按钮文字无溢出。
 
 ## 后续 P3 可优化
 

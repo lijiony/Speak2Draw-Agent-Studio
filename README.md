@@ -17,13 +17,13 @@ npm run dev
 
 ## AI 配置
 
-DeepSeek 只在本地规则无法明确执行时作为智能兜底使用，API Key 只由 Vite 本地代理读取，不会进入浏览器打包产物。
+DeepSeek 只在本地规则无法明确执行时作为智能兜底使用。推荐方式是把 API Key 放在本地 `.env` 或 Netlify 环境变量中，由同源代理读取；设置页也支持临时粘贴“本次会话密钥”，该密钥只保存在当前标签页内存中，通过同源请求头发送给代理，不写入 localStorage、执行记录或仓库文件。
 
 ```bash
-copy .env.example .env.local
+copy .env.example .env
 ```
 
-然后在 `.env.local` 中填写：
+然后在 `.env` 中填写：
 
 ```bash
 DEEPSEEK_API_KEY=你的本地密钥
@@ -32,7 +32,7 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_TIMEOUT_MS=8000
 ```
 
-不要提交 `.env.local`、token、密钥或账号密码。
+不要提交 `.env`、token、密钥或账号密码。
 
 生产部署到 Netlify 时，在站点环境变量中配置同名的 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 `DEEPSEEK_TIMEOUT_MS`。项目已提供 `netlify.toml` 和 `/api/ai/intent` Netlify Function，生产环境同样由服务端函数持有 DeepSeek API Key。
 
@@ -43,6 +43,8 @@ DEEPSEEK_TIMEOUT_MS=8000
 AI 返回内容必须符合项目内置 JSON 规范：固定格式为 `{ "schemaVersion": "1.0", "intent": { ... } }`。应用会重新校验图形类型、颜色、选择器、尺寸、配方数量和意图必填字段；缺少必要字段或包含不安全内容时不会执行。
 
 当用户要画“猫、船、人物、云朵”等画布没有内置模板的对象时，DeepSeek 可以返回 `create_asset_recipe`。系统会把配方中的多个基础 SVG 图形组成一个命名素材组，例如“猫”；后续用户可以继续说“选择猫”“把猫向右移动一点”“删除猫”，整组素材会一起被编辑。
+
+当用户要修改素材局部时，系统会把素材组、局部部件、当前选中范围和最近语音一起发给 AI。AI 只能返回白名单 JSON 指令，例如删除“帽子”局部、替换“窗户”局部或给已有素材组追加新的部件；本地执行器会再次按 `group`/`part` 范围校验，避免“改窗户”误改整个房子。
 
 DeepSeek 也可以在本地规则不确定时返回 `rename_object`、`duplicate_object` 和 `update_text`，分别支持给已有图形改名、复制对象和修改文字内容。
 
@@ -92,6 +94,13 @@ AI 输入输出格式、合法 intent 示例和 DeepSeek 手工联调步骤见 `
 - 画一只戴帽子的猫
 - 把猫向右移动一点
 - 画一个神秘角色 → 戴红帽子的猫
+- 选择房子的窗户
+- 把房子窗户改成蓝色
+- 把帽子删去不好看
+- 打开设置
+- 把模型改成 deepseek-v4-pro
+- 测试 AI 连接
+- 关闭设置
 - 月亮换个梦幻感
 - 我能说什么
 - 画布里有什么

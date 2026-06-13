@@ -4,10 +4,11 @@ declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => Promise<void>;
-      getScene: () => { objects: Array<{ name: string; groupName?: string; kind: string; x: number; style: { fill: string } }> };
+      getScene: () => { objects: Array<{ name: string; groupName?: string; partName?: string; kind: string; x: number; style: { fill: string } }> };
       getAiStatus: () => { state: string; message: string };
       getClarification: () => { originalTranscript: string; question: string } | null;
       getVoiceDiagnostics: () => { policyMode: string; phase: string; interimText: string | null; finalText: string | null };
+      getSettings: () => { aiModel: string; aiBaseUrl: string; sessionKeyConfigured: boolean; voicePolicyMode: string; aiFallbackEnabled: boolean };
     };
   }
 }
@@ -28,6 +29,30 @@ test('语音端点策略可以通过 URL 切换到耐心模式', async ({ page }
     policyMode: 'patient',
     phase: 'idle'
   });
+  expect(consoleErrors).toEqual([]);
+});
+
+test('语音端点策略按钮可以即时切换实际策略', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.getByRole('button', { name: /^fast$/ }).click();
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getVoiceDiagnostics().policyMode)).toBe('fast');
+
+  await page.getByRole('button', { name: /^patient$/ }).click();
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getVoiceDiagnostics().policyMode)).toBe('patient');
+
+  await page.getByRole('button', { name: /^balanced$/ }).click();
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getVoiceDiagnostics().policyMode)).toBe('balanced');
+  expect(consoleErrors).toEqual([]);
+});
+
+test('语音启动长时间无回调时会恢复为可重试错误', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.getByRole('button', { name: '启动语音监听' }).click();
+  await expect(page.locator('header').getByText('语音识别启动超时')).toBeVisible({ timeout: 8000 });
+  await expect(page.getByRole('button', { name: '启动语音监听' })).toBeEnabled();
+  expect(await page.evaluate(() => window.__speak2drawTest?.getVoiceDiagnostics().phase)).toBe('error');
   expect(consoleErrors).toEqual([]);
 });
 
@@ -53,6 +78,127 @@ test('语音文本可以驱动复杂绘图和按名称编辑', async ({ page }) 
   const objectNames = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? []);
   expect(objectNames[objectNames.length - 1]).toContain('房子');
 
+  await submitVoiceText(page, '选择房子');
+  await expect(page.locator('svg .group-selection-box')).toHaveCount(1);
+  await expect(page.locator('svg .selection-box')).toHaveCount(0);
+  const beforeMove = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.filter((object) => object.groupName === '房子').map((object) => object.x) ?? []);
+  await submitVoiceText(page, '向右移动一点');
+  const afterMove = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.filter((object) => object.groupName === '房子').map((object) => object.x) ?? []);
+  expect(afterMove.every((x, index) => x > (beforeMove[index] ?? x))).toBe(true);
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test('语音可以选中和编辑房子局部窗户', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '画一个房子');
+  await submitVoiceText(page, '选择房子窗户');
+  await expect(page.locator('svg .group-selection-box')).toHaveCount(0);
+  await expect(page.locator('svg .selection-box')).toHaveCount(1);
+
+  await submitVoiceText(page, '把房子窗户改成蓝色');
+  const objects = await page.evaluate(() => window.__speak2drawTest?.getScene().objects ?? []);
+  const windowObject = objects.find((object) => object.name === '房子窗户');
+  const wallObject = objects.find((object) => object.name === '房子墙体');
+
+  expect(windowObject?.style.fill).toBe('#2563eb');
+  expect(wallObject?.style.fill).toBe('#fef3c7');
+  expect(consoleErrors).toEqual([]);
+});
+
+test('删除帽子局部不会删除整只小猫', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false,
+        provider: 'local',
+        reason: '测试环境使用本地素材配方。'
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一个戴帽子的小猫');
+  let objects = await page.evaluate(() => window.__speak2drawTest?.getScene().objects ?? []);
+  expect(objects.some((object) => object.partName === '帽子')).toBe(true);
+
+  await submitVoiceText(page, '把帽子删去不好看');
+  objects = await page.evaluate(() => window.__speak2drawTest?.getScene().objects ?? []);
+  expect(objects.some((object) => object.partName === '帽子')).toBe(false);
+  expect(objects.some((object) => object.name === '小猫脸')).toBe(true);
+  expect(objects.every((object) => object.groupName === '戴帽子的小猫')).toBe(true);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('设置页支持按钮、语音和 AI 连接测试', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        provider: 'deepseek',
+        model: 'deepseek-v4-pro',
+        intent: { type: 'create_shape', shape: 'circle', color: '#ef4444' }
+      })
+    });
+  });
+
+  await page.getByRole('button', { name: '打开设置' }).click();
+  await expect(page.locator('section[aria-label="设置页面"]')).toBeVisible();
+  await page.getByLabel('AI 模型').selectOption('deepseek-v4-pro');
+  await page.getByLabel('会话 API Key').fill('session-secret');
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getSettings())).toMatchObject({
+    aiModel: 'deepseek-v4-pro',
+    sessionKeyConfigured: true
+  });
+  expect(await page.evaluate(() => JSON.stringify(window.localStorage))).not.toContain('session-secret');
+  expect(await page.content()).not.toContain('session-secret');
+
+  await page.getByRole('button', { name: '测试 AI 连接' }).click();
+  await expect(page.locator('aside[aria-label="设置诊断"]')).toContainText('AI 连接正常');
+  await page.getByRole('button', { name: '清除会话密钥' }).click();
+  await expect(page.getByLabel('会话 API Key')).toHaveValue('');
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getSettings().sessionKeyConfigured)).toBe(false);
+
+  await submitVoiceText(page, '把模型改成 deepseek-v4-flash');
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getSettings().aiModel)).toBe('deepseek-v4-flash');
+
+  await submitVoiceText(page, '关闭设置');
+  await expect(page.locator('section[aria-label="设置页面"]')).toBeHidden();
+  expect(consoleErrors).toEqual([]);
+});
+
+test('关闭 AI 兜底后模糊指令不会请求 AI 代理', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+  let aiRequestCount = 0;
+
+  await page.route('**/api/ai/intent', async (route) => {
+    aiRequestCount += 1;
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: false, provider: 'local', reason: '不应该请求 AI。' })
+    });
+  });
+
+  await submitVoiceText(page, '画一个蓝色圆形叫月亮');
+  await page.getByRole('button', { name: '打开设置' }).click();
+  await page.getByRole('button', { name: '语音控制' }).click();
+  await page.getByLabel('本地规则不确定时请求 AI').uncheck();
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getSettings().aiFallbackEnabled)).toBe(false);
+  await submitVoiceText(page, '关闭设置');
+  await submitVoiceText(page, '月亮换个梦幻感');
+
+  expect(aiRequestCount).toBe(0);
+  await expect(aiStatus(page)).toContainText('AI 兜底已关闭');
+  await expect(page.locator('svg circle[fill="#2563eb"]')).toHaveCount(1);
   expect(consoleErrors).toEqual([]);
 });
 
@@ -67,6 +213,20 @@ test('展示级控制台快捷按钮可以触发语音命令', async ({ page }) 
   await expect(systemFeedback(page)).toContainText('已撤销上一步。');
   expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.length ?? 0)).toBe(0);
 
+  expect(consoleErrors).toEqual([]);
+});
+
+test('画布提示和能力区不会伪装成不可用命令按钮', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.getByRole('button', { name: '收起画布提示' }).click();
+  await expect(page.getByText('提示已收起')).toBeVisible();
+  await expect(page.getByRole('button', { name: '显示画布提示' })).toBeVisible();
+  await expect(page.locator('.capability-toolbar button')).toHaveCount(0);
+  await expect(page.locator('.capability-toolbar .capability-chip')).toHaveCount(10);
+  await page.getByTitle('查看编辑指令').click();
+  await expect(page.getByRole('button', { name: '线条加粗' })).toBeVisible();
+  await expect(systemFeedback(page)).toContainText('启动监听后，说出绘图指令。');
   expect(consoleErrors).toEqual([]);
 });
 
@@ -331,7 +491,7 @@ test('AI 可以把缺失元素生成安全矢量配方', async ({ page }) => {
         model: 'deepseek-v4-flash',
         intent: {
           type: 'create_asset_recipe',
-          name: '猫',
+          name: '戴帽子的小猫',
           recipe: [
             { shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 370, y: 230 }, width: 160, height: 140 },
             { shape: 'triangle', name: '猫左耳', color: '#f9fafb', position: { x: 375, y: 190 }, width: 60, height: 70 },
@@ -343,20 +503,60 @@ test('AI 可以把缺失元素生成安全矢量配方', async ({ page }) => {
     });
   });
 
-  await submitVoiceText(page, '画一只戴帽子的猫');
+  await submitVoiceText(page, '画一个戴帽子的小猫');
   await expect(systemFeedback(page)).toContainText('已拆解并执行 4 个绘图步骤。');
 
   const objectNames = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.name) ?? []);
   expect(objectNames).toEqual(['猫脸', '猫左耳', '猫右耳', '红色帽子']);
-  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.groupName) ?? [])).toEqual(['猫', '猫', '猫', '猫']);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.groupName) ?? [])).toEqual(['戴帽子的小猫', '戴帽子的小猫', '戴帽子的小猫', '戴帽子的小猫']);
   await expect(page.locator('svg circle[fill="#f9fafb"]')).toHaveCount(1);
   await expect(page.locator('svg rect[fill="#ef4444"]')).toHaveCount(1);
 
   const beforeMove = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.x) ?? []);
-  await submitVoiceText(page, '把猫向右移动一点');
+  await submitVoiceText(page, '把小猫向右移动一点');
   await expect(systemFeedback(page)).toContainText('已更新画布，现在共有 4 个图形。');
   const afterMove = await page.evaluate(() => window.__speak2drawTest?.getScene().objects.map((object) => object.x) ?? []);
   expect(afterMove.every((x, index) => x > (beforeMove[index] ?? x))).toBe(true);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('DeepSeek 不可用时创作类指令使用本地安全素材配方兜底', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false,
+        provider: 'local',
+        reason: '未配置 DEEPSEEK_API_KEY。'
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一个戴帽子的小猫');
+  await expect(systemFeedback(page)).toContainText('已拆解并执行');
+  await expect(aiStatus(page)).toContainText('本地安全素材配方');
+
+  const scene = await page.evaluate(() => window.__speak2drawTest?.getScene());
+  expect(scene?.objects.length).toBeGreaterThanOrEqual(6);
+  expect(scene?.objects.every((object) => object.groupName === '戴帽子的小猫')).toBe(true);
+  expect(await page.locator('svg .group-selection-box').count()).toBe(1);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('语音可以打开和关闭状态信息浮层', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '打开状态信息');
+  await expect(page.getByRole('dialog', { name: '状态信息' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '状态信息' }).getByText('工作流运行状态')).toBeVisible();
+  await expect(systemFeedback(page)).toContainText('已打开状态信息。');
+
+  await submitVoiceText(page, '关闭状态信息');
+  await expect(page.getByRole('dialog', { name: '状态信息' })).toBeHidden();
+  await expect(systemFeedback(page)).toContainText('已关闭状态信息。');
   expect(consoleErrors).toEqual([]);
 });
 
@@ -437,9 +637,39 @@ test('移动端视口下核心面板仍然可见', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 
   await expect(page.locator('section[aria-label="绘图画布"]')).toBeVisible();
-  await expect(page.locator('aside[aria-label="语音状态"]')).toBeVisible();
+  await expect(page.locator('aside[aria-label="语音控制栏"]')).toBeVisible();
   await expect(page.getByText('麦克风输入测试')).toBeVisible();
+  await expect(page.getByText('尚未读取麦克风输入')).toBeVisible();
+  await expect(page.locator('[aria-label="麦克风实时音量"] span')).toHaveCount(0);
+  const canvasTop = await page.locator('section[aria-label="绘图画布"]').evaluate((element) => element.getBoundingClientRect().top);
+  const diagnosticsTop = await page.locator('aside[aria-label="语音控制栏"]').evaluate((element) => element.getBoundingClientRect().top);
+  expect(canvasTop).toBeLessThan(diagnosticsTop);
 
+  expect(consoleErrors).toEqual([]);
+});
+
+test('左右栏和设置页使用独立滚动，不带动整个页面', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 320 });
+  const consoleErrors = await openWorkbench(page);
+
+  const documentScroll = await page.evaluate(() => ({
+    bodyOverflow: window.getComputedStyle(document.body).overflow,
+    scrollHeight: document.scrollingElement?.scrollHeight ?? 0,
+    clientHeight: document.scrollingElement?.clientHeight ?? 0
+  }));
+  expect(documentScroll.bodyOverflow).toBe('hidden');
+  expect(documentScroll.scrollHeight).toBe(documentScroll.clientHeight);
+
+  await expectScrollableRegion(page, 'aside[aria-label="语音控制栏"]');
+  await expectScrollableRegion(page, '.studio-main');
+
+  await page.getByRole('button', { name: '打开设置' }).click();
+  await expect(page.locator('section[aria-label="设置页面"]')).toBeVisible();
+  await expectScrollableRegion(page, 'section[aria-label="设置表单"]');
+  await expectScrollableRegion(page, 'aside[aria-label="设置诊断"]');
+
+  const finalDocumentScroll = await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0);
+  expect(finalDocumentScroll).toBe(0);
   expect(consoleErrors).toEqual([]);
 });
 
@@ -454,6 +684,29 @@ const systemFeedback = (page: Page) =>
 
 const aiStatus = (page: Page) =>
   page.locator('section[aria-label="AI 解析状态"]').locator('p');
+
+const expectScrollableRegion = async (page: Page, selector: string) => {
+  const before = await page.locator(selector).evaluate((element) => ({
+    overflowY: window.getComputedStyle(element).overflowY,
+    overscrollY: window.getComputedStyle(element).overscrollBehaviorY,
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+    beforeTop: element.scrollTop
+  }));
+  expect(['auto', 'scroll']).toContain(before.overflowY);
+  expect(before.overscrollY).toBe('contain');
+  expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+
+  const after = await page.locator(selector).evaluate((element) => {
+    element.scrollTop = 96;
+    return {
+      afterTop: element.scrollTop,
+      documentTop: document.scrollingElement?.scrollTop ?? 0
+    };
+  });
+  expect(after.afterTop).toBeGreaterThan(before.beforeTop);
+  expect(after.documentTop).toBe(0);
+};
 
 const collectConsoleErrors = (page: Page) => {
   const errors: string[] = [];

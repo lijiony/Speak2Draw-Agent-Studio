@@ -28,13 +28,32 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
     case 'create_complex_scene':
       return { commands: createComplexCommands(intent.rawText) };
     case 'create_asset_recipe': {
-      const commands = createAssetRecipeCommands(intent);
+      const commands = createAssetRecipeCommands(intent, scene);
       return commands.length
         ? { commands }
         : { commands: [], message: 'AI 没有生成可安全执行的绘图配方，请换一种说法。', needsClarification: true };
     }
+    case 'revise_asset_part': {
+      const target = findObject(scene.objects, intent.selector, scene.selectedId, scene.selection);
+      if (!target) return noTarget('没有找到要修改的局部，请先说“选择房子的窗户”或“选择帽子”。');
+      const partSelector = intent.selector ? { ...intent.selector, scope: 'part' as const } : { mode: 'selected' as const, scope: 'part' as const };
+      if (intent.operation === 'delete' || !intent.recipe?.length) {
+        return {
+          commands: [{ type: 'delete_object', selector: partSelector }],
+          message: `已删除${target.partName ?? target.name}。`
+        };
+      }
+      const attachTo = target.groupId ? { mode: 'by_group_id' as const, groupId: target.groupId, scope: 'group' as const } : intent.attachTo;
+      const createCommands = createAssetRecipeCommands({ ...intent, type: 'create_asset_recipe', attachTo }, scene);
+      return createCommands.length
+        ? {
+            commands: [{ type: 'delete_object', selector: partSelector }, ...createCommands],
+            message: `已替换${target.partName ?? target.name}。`
+          }
+        : { commands: [], message: 'AI 没有生成可替换的安全部件。', needsClarification: true };
+    }
     case 'rename_object': {
-      const target = findObject(scene.objects, intent.selector, scene.selectedId);
+      const target = findObject(scene.objects, intent.selector, scene.selectedId, scene.selection);
       if (!target) return noTarget('当前没有可重命名的图形，请先画出一个对象。');
       if (!intent.name) return { commands: [], message: '没有识别出新的名称，请再说一遍。', needsClarification: true };
 
@@ -45,7 +64,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       };
     }
     case 'update_text': {
-      const target = findObject(scene.objects, intent.selector, scene.selectedId);
+      const target = findObject(scene.objects, intent.selector, scene.selectedId, scene.selection);
       if (!target) return noTarget('当前没有可编辑文字的图形，请先画出一个文字对象。');
       if (target.kind !== 'text') {
         return {
@@ -62,7 +81,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       };
     }
     case 'duplicate_object': {
-      const target = findObject(scene.objects, intent.selector, scene.selectedId);
+      const target = findObject(scene.objects, intent.selector, scene.selectedId, scene.selection);
       if (!target) return noTarget('当前没有可复制的图形，请先画出一个对象。');
       const relatedObjects = target.groupId ? scene.objects.filter((object) => object.groupId === target.groupId) : [target];
       const copyName = duplicateLabel(target.groupName ?? target.name);
@@ -92,7 +111,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
         };
     }
     case 'group_objects': {
-      const targets = findObjects(scene.objects, intent.selector, scene.selectedId);
+      const targets = findObjects(scene.objects, intent.selector, scene.selectedId, scene.selection);
       if (targets.length < 2) {
         return {
           commands: [],
@@ -114,7 +133,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       };
     }
     case 'ungroup_objects': {
-      const targets = findObjects(scene.objects, intent.selector, scene.selectedId);
+      const targets = findObjects(scene.objects, intent.selector, scene.selectedId, scene.selection);
       if (targets.length === 0) return noTarget('当前没有可取消成组的图形。');
       if (!targets.some((object) => object.groupId)) {
         return { commands: [], message: '当前目标还没有成组。', needsClarification: true };
@@ -125,7 +144,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       };
     }
     case 'align_objects': {
-      const targets = findObjects(scene.objects, intent.selector, scene.selectedId);
+      const targets = findObjects(scene.objects, intent.selector, scene.selectedId, scene.selection);
       if (targets.length < 2) {
         return { commands: [], message: '至少需要两个图形才能对齐。', needsClarification: true };
       }
@@ -135,7 +154,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       };
     }
     case 'distribute_objects': {
-      const targets = findObjects(scene.objects, intent.selector, scene.selectedId);
+      const targets = findObjects(scene.objects, intent.selector, scene.selectedId, scene.selection);
       if (targets.length < 3) {
         return { commands: [], message: '至少需要三个图形才能均匀分布。', needsClarification: true };
       }
@@ -145,7 +164,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): { comman
       };
     }
     case 'select_object': {
-      const target = findObject(scene.objects, intent.selector, scene.selectedId);
+      const target = findObject(scene.objects, intent.selector, scene.selectedId, scene.selection);
       return target
         ? { commands: [{ type: 'select_object', selector: intent.selector }] }
         : { commands: [], message: '没有找到符合条件的图形，请换一种说法。', needsClarification: true };
@@ -205,16 +224,26 @@ const createCommand = (shape: ShapeKind, intent: DrawingIntent): DrawingCommand 
   })
 });
 
-const createAssetRecipeCommands = (intent: DrawingIntent): DrawingCommand[] => {
+const createAssetRecipeCommands = (intent: DrawingIntent, scene: SceneState): DrawingCommand[] => {
   const recipe = (intent.recipe ?? []).slice(0, 16);
-  const groupName = intent.name ?? inferAssetGroupName(intent.rawText, recipe);
-  const groupId = groupName ? createGroupId() : undefined;
+  const attachedTarget = intent.attachTo ? findObject(scene.objects, intent.attachTo, scene.selectedId, scene.selection) : undefined;
+  const attachedGroup = attachedTarget?.groupId
+    ? {
+        groupId: attachedTarget.groupId,
+        groupName: attachedTarget.groupName ?? intent.name ?? inferAssetGroupName(intent.rawText, recipe)
+      }
+    : null;
+  const groupName = attachedGroup?.groupName ?? intent.name ?? inferAssetGroupName(intent.rawText, recipe);
+  const groupId = attachedGroup?.groupId ?? (groupName ? createGroupId() : undefined);
+  const partIdsByName = new Map<string, string>();
 
   return recipe.map((item, index) =>
     objectCommand(item.shape, {
       name: item.name ?? (groupName ? `${groupName}部件${index + 1}` : undefined),
       groupId,
       groupName,
+      partName: item.partName,
+      partId: item.partName ? partIdForName(partIdsByName, item.partName) : undefined,
       x: item.position?.x,
       y: item.position?.y,
       width: item.width,
@@ -234,11 +263,12 @@ const createComplexCommands = (rawText: string): DrawingCommand[] => {
   const sunColor = detectEntityColor(text, '太阳');
 
   if (text.includes('房子')) {
+    const houseGroupId = createGroupId();
     commands.push(
-      objectCommand('rectangle', { name: '房子墙体', x: 340, y: 300, width: 220, height: 160, fill: houseColor ?? '#fef3c7' }),
-      objectCommand('triangle', { name: '房子屋顶', x: 310, y: 200, width: 280, height: 130, fill: houseColor ?? '#ef4444' }),
-      objectCommand('rectangle', { name: '房子门', x: 425, y: 370, width: 50, height: 90, fill: '#92400e' }),
-      objectCommand('rectangle', { name: '房子窗户', x: 365, y: 335, width: 48, height: 42, fill: '#bfdbfe' })
+      objectCommand('rectangle', { name: '房子墙体', groupId: houseGroupId, groupName: '房子', partId: createPartId(), partName: '墙体', x: 340, y: 300, width: 220, height: 160, fill: houseColor ?? '#fef3c7' }),
+      objectCommand('triangle', { name: '房子屋顶', groupId: houseGroupId, groupName: '房子', partId: createPartId(), partName: '屋顶', x: 310, y: 200, width: 280, height: 130, fill: houseColor ?? '#ef4444' }),
+      objectCommand('rectangle', { name: '房子门', groupId: houseGroupId, groupName: '房子', partId: createPartId(), partName: '门', x: 425, y: 370, width: 50, height: 90, fill: '#92400e' }),
+      objectCommand('rectangle', { name: '房子窗户', groupId: houseGroupId, groupName: '房子', partId: createPartId(), partName: '窗户', x: 365, y: 335, width: 48, height: 42, fill: '#bfdbfe' })
     );
   }
 
@@ -247,18 +277,20 @@ const createComplexCommands = (rawText: string): DrawingCommand[] => {
   }
 
   if (text.includes('树')) {
+    const treeGroupId = createGroupId();
     commands.push(
-      objectCommand('rectangle', { name: '树干', x: 150, y: 370, width: 42, height: 110, fill: '#92400e' }),
-      objectCommand('circle', { name: '树冠', x: 112, y: 280, width: 120, height: 120, fill: '#16a34a' })
+      objectCommand('rectangle', { name: '树干', groupId: treeGroupId, groupName: '树', x: 150, y: 370, width: 42, height: 110, fill: '#92400e' }),
+      objectCommand('circle', { name: '树冠', groupId: treeGroupId, groupName: '树', x: 112, y: 280, width: 120, height: 120, fill: '#16a34a' })
     );
   }
 
   if (text.includes('机器人')) {
+    const robotGroupId = createGroupId();
     commands.push(
-      objectCommand('rectangle', { name: '机器人身体', x: 610, y: 310, width: 150, height: 150, fill: '#d1d5db' }),
-      objectCommand('rectangle', { name: '机器人头部', x: 635, y: 210, width: 100, height: 80, fill: '#e5e7eb' }),
-      objectCommand('circle', { name: '机器人左眼', x: 660, y: 238, width: 18, height: 18, fill: '#111827' }),
-      objectCommand('circle', { name: '机器人右眼', x: 698, y: 238, width: 18, height: 18, fill: '#111827' })
+      objectCommand('rectangle', { name: '机器人身体', groupId: robotGroupId, groupName: '机器人', x: 610, y: 310, width: 150, height: 150, fill: '#d1d5db' }),
+      objectCommand('rectangle', { name: '机器人头部', groupId: robotGroupId, groupName: '机器人', x: 635, y: 210, width: 100, height: 80, fill: '#e5e7eb' }),
+      objectCommand('circle', { name: '机器人左眼', groupId: robotGroupId, groupName: '机器人', x: 660, y: 238, width: 18, height: 18, fill: '#111827' }),
+      objectCommand('circle', { name: '机器人右眼', groupId: robotGroupId, groupName: '机器人', x: 698, y: 238, width: 18, height: 18, fill: '#111827' })
     );
   }
 
@@ -384,7 +416,7 @@ const commonPrefix = (items: string[]) => {
 };
 
 const hasEditableTarget = (scene: SceneState, selector: DrawingIntent['selector']) =>
-  Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId));
+  Boolean(findObject(scene.objects, selector ?? { mode: 'selected' }, scene.selectedId, scene.selection));
 
 const HELP_MESSAGE =
   '可以说：画一个红色圆形、画一个房子和太阳、选择太阳、把它改成黄色、把月亮改名为星星、复制星星、把所有图形成组、把所有图形左对齐、水平分布所有图形、把文字改成世界、向右移动一点、撤销、导出图片，或问我画布里有什么。';
@@ -401,6 +433,10 @@ const describeScene = (scene: SceneState) => {
 const describeSelection = (scene: SceneState) => {
   const selected = scene.selectedId ? scene.objects.find((object) => object.id === scene.selectedId) : null;
   if (!selected) return '当前没有明确选中图形。可以说“选择最后一个图形”。';
+  if (selected.groupId) {
+    const groupObjects = scene.objects.filter((object) => object.groupId === selected.groupId);
+    return `当前选中：${selected.groupName ?? selected.name}素材组，包含 ${groupObjects.length} 个部件。位置 ${Math.round(selected.x)}、${Math.round(selected.y)}。`;
+  }
   return `当前选中：${selected.name}，颜色 ${colorLabel(selected.style.fill)}，位置 ${Math.round(selected.x)}、${Math.round(selected.y)}。`;
 };
 
@@ -462,6 +498,15 @@ const hasStyleUpdate = (updates: ReturnType<typeof compactStyleUpdate>) => Objec
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const createGroupId = () => `asset-${nextId++}`;
 const createId = () => `shape-${nextId++}`;
+const createPartId = () => `part-${nextId++}`;
+const partIdForName = (partIdsByName: Map<string, string>, partName: string) => {
+  const key = partName.trim().slice(0, 24);
+  const existing = partIdsByName.get(key);
+  if (existing) return existing;
+  const next = createPartId();
+  partIdsByName.set(key, next);
+  return next;
+};
 const duplicateLabel = (value: string) => {
   const trimmed = value.trim().slice(0, 20) || '副本';
   if (/副本\d*$/.test(trimmed)) return `${trimmed}2`;

@@ -2,6 +2,7 @@ export type ShapeKind = 'circle' | 'rectangle' | 'ellipse' | 'line' | 'triangle'
 export type LayerDirection = 'front' | 'back' | 'forward' | 'backward';
 export type AlignmentMode = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom';
 export type DistributionAxis = 'horizontal' | 'vertical';
+export type SelectionScope = 'group' | 'part';
 
 export type DrawingIntentType =
   | 'sequence'
@@ -11,6 +12,7 @@ export type DrawingIntentType =
   | 'create_shape'
   | 'create_complex_scene'
   | 'create_asset_recipe'
+  | 'revise_asset_part'
   | 'select_object'
   | 'rename_object'
   | 'duplicate_object'
@@ -72,6 +74,8 @@ export interface SceneObject {
   name: string;
   groupId?: string;
   groupName?: string;
+  partId?: string;
+  partName?: string;
   x: number;
   y: number;
   width: number;
@@ -91,11 +95,26 @@ export interface DrawingRecipeItem {
   width?: number;
   height?: number;
   text?: string;
+  partName?: string;
 }
+
+export type SceneSelection =
+  | {
+      scope: 'group';
+      groupId: string;
+      anchorObjectId?: string;
+    }
+  | {
+      scope: 'part';
+      objectId: string;
+      groupId?: string;
+    };
 
 export interface SceneSnapshot {
   objects: SceneObject[];
   selectedId: string | null;
+  selection: SceneSelection | null;
+  revision: number;
 }
 
 export interface SceneState extends SceneSnapshot {
@@ -123,15 +142,21 @@ export interface DrawingIntent {
   axis?: DistributionAxis;
   scale?: number;
   recipe?: DrawingRecipeItem[];
+  attachTo?: ObjectSelector;
+  operation?: 'delete' | 'replace';
   reason?: string;
 }
 
 export interface ObjectSelector {
-  mode: 'last' | 'selected' | 'all' | 'by_shape_color' | 'by_name' | 'by_names';
+  mode: 'last' | 'selected' | 'all' | 'by_shape_color' | 'by_name' | 'by_names' | 'by_id' | 'by_group_id' | 'by_part_name';
+  scope?: SelectionScope;
+  objectId?: string;
+  groupId?: string;
   shape?: ShapeKind;
   color?: string;
   name?: string;
   names?: string[];
+  withinGroupName?: string;
 }
 
 export interface DrawingCommand {

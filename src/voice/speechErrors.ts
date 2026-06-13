@@ -71,6 +71,14 @@ export const mapSpeechError = (error: unknown): SpeechErrorInfo => {
     };
   }
 
+  if (name === 'speech-start-timeout') {
+    return {
+      title: '语音识别启动超时',
+      message: '麦克风权限已经通过，但浏览器语音识别服务没有进入监听状态。',
+      action: '请点击“启动语音监听”重试；如果仍然失败，请刷新页面或改用最新版 Chrome / Edge。'
+    };
+  }
+
   if (name === 'unsupported') {
     return {
       title: '浏览器不支持语音识别',

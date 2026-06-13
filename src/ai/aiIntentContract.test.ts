@@ -21,7 +21,24 @@ describe('aiIntentContract', () => {
     });
     const messages = buildDeepSeekMessages(payload);
 
-    expect(payload.scene.objects).toEqual([{ name: '月亮', groupName: '夜空', kind: 'circle', fill: '#2563eb' }]);
+    expect(payload.scene.objects[0]).toMatchObject({
+      id: 'shape-1',
+      name: '月亮',
+      groupId: 'asset-1',
+      groupName: '夜空',
+      kind: 'circle',
+      fill: '#2563eb'
+    });
+    expect(payload.scene.assets[0]).toMatchObject({
+      groupId: 'asset-1',
+      groupName: '夜空',
+      parts: [{ objectId: 'shape-1', name: '月亮' }]
+    });
+    expect(payload.scene.selection).toMatchObject({
+      scope: 'group',
+      groupId: 'asset-1',
+      name: '夜空'
+    });
     expect(payload.scene.selectedName).toBe('月亮');
     expect(payload.clarificationContext?.originalTranscript).toBe('把月亮改一下');
     expect(messages[0].content).toContain('clarificationContext');
@@ -74,6 +91,41 @@ describe('aiIntentContract', () => {
       position: { x: 940, y: 0 },
       width: 420,
       height: 20
+    });
+  });
+
+  it('接受 AI 返回局部修改意图', () => {
+    const deleteIntent = normalizeAiIntent(
+      {
+        type: 'revise_asset_part',
+        operation: 'delete',
+        selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫', scope: 'part' }
+      },
+      '把帽子删去'
+    );
+
+    const replaceIntent = normalizeAiIntent(
+      {
+        type: 'revise_asset_part',
+        operation: 'replace',
+        selector: { mode: 'by_id', objectId: 'shape-8', scope: 'part' },
+        attachTo: { mode: 'by_group_id', groupId: 'asset-cat', scope: 'group' },
+        recipe: [{ shape: 'rectangle', name: '蓝色帽檐', partName: '帽子', color: '#2563eb' }]
+      },
+      '帽子不好看换一个'
+    );
+
+    expect(deleteIntent).toMatchObject({
+      type: 'revise_asset_part',
+      operation: 'delete',
+      selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫', scope: 'part' }
+    });
+    expect(replaceIntent).toMatchObject({
+      type: 'revise_asset_part',
+      operation: 'replace',
+      selector: { mode: 'by_id', objectId: 'shape-8', scope: 'part' },
+      attachTo: { mode: 'by_group_id', groupId: 'asset-cat', scope: 'group' },
+      recipe: [{ partName: '帽子' }]
     });
   });
 

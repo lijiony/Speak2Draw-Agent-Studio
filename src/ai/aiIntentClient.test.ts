@@ -36,7 +36,7 @@ describe('aiIntentClient', () => {
       );
     });
 
-    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), '本地规则无法理解', undefined, fetcher as unknown as typeof fetch);
+    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), '本地规则无法理解', undefined, undefined, fetcher as unknown as typeof fetch);
     const requestBody = JSON.parse(submittedBody) as { transcript: string; localReason?: string };
 
     expect(requestBody).toMatchObject({ transcript: '月亮换个梦幻感', localReason: '本地规则无法理解' });
@@ -55,7 +55,7 @@ describe('aiIntentClient', () => {
       throw new Error('network');
     });
 
-    const result = await resolveAiIntent(transcript('画一只猫'), createEmptyScene(), undefined, undefined, fetcher as unknown as typeof fetch);
+    const result = await resolveAiIntent(transcript('画一只猫'), createEmptyScene(), undefined, undefined, undefined, fetcher as unknown as typeof fetch);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -75,7 +75,7 @@ describe('aiIntentClient', () => {
       )
     );
 
-    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), undefined, undefined, fetcher as unknown as typeof fetch);
+    const result = await resolveAiIntent(transcript('月亮换个梦幻感'), createEmptyScene(), undefined, undefined, undefined, fetcher as unknown as typeof fetch);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -112,6 +112,7 @@ describe('aiIntentClient', () => {
         question: '听到了创建指令，但没有识别出要画的图形。',
         reason: '缺少图形'
       },
+      undefined,
       fetcher as unknown as typeof fetch
     );
 
@@ -126,6 +127,44 @@ describe('aiIntentClient', () => {
         question: '听到了创建指令，但没有识别出要画的图形。',
         reason: '缺少图形'
       }
+    });
+  });
+
+  it('会话 API key 只通过请求头发送，不进入 AI payload', async () => {
+    let submittedBody = '';
+    let submittedHeaders: HeadersInit | undefined;
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      submittedBody = init?.body as string;
+      submittedHeaders = init?.headers;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          provider: 'local',
+          reason: '测试'
+        }),
+        { status: 200 }
+      );
+    });
+
+    await resolveAiIntent(
+      transcript('画一只猫'),
+      createEmptyScene(),
+      undefined,
+      undefined,
+      {
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-v4-pro',
+        timeoutMs: 9000,
+        sessionApiKey: 'session-secret'
+      },
+      fetcher as unknown as typeof fetch
+    );
+
+    expect(JSON.parse(submittedBody)).not.toMatchObject({ sessionApiKey: 'session-secret' });
+    expect(submittedBody).not.toContain('session-secret');
+    expect(submittedHeaders).toMatchObject({
+      'X-Speak2Draw-Session-Key': 'session-secret',
+      'X-Speak2Draw-Model': 'deepseek-v4-pro'
     });
   });
 });

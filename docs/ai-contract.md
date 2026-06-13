@@ -9,10 +9,10 @@
 复制环境变量示例文件：
 
 ```bash
-copy .env.example .env.local
+copy .env.example .env
 ```
 
-在 `.env.local` 中填写：
+在 `.env` 中填写：
 
 ```bash
 DEEPSEEK_API_KEY=本地密钥
@@ -21,9 +21,9 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_TIMEOUT_MS=8000
 ```
 
-`.env.local` 必须保持本地 ignored 状态，不能提交到远程仓库。
+`.env` 必须保持本地 ignored 状态，不能提交到远程仓库。
 
-生产部署到 Netlify 时，在站点环境变量中配置同名变量。仓库中的 `netlify.toml` 会构建 `dist`，`netlify/functions/ai-intent.ts` 会把 `/api/ai/intent` 映射到 Netlify Function；函数通过 `Netlify.env.get` 读取 DeepSeek 配置，不从浏览器端读取密钥。
+生产部署到 Netlify 时，在站点环境变量中配置同名变量。仓库中的 `netlify.toml` 会构建 `dist`，`netlify/functions/ai-intent.ts` 会把 `/api/ai/intent` 映射到 Netlify Function；函数默认通过 `Netlify.env.get` 读取 DeepSeek 配置。
 
 ## API 入口
 
@@ -42,7 +42,7 @@ Authorization: Bearer <DEEPSEEK_API_KEY>
 Content-Type: application/json
 ```
 
-浏览器端不会接触 DeepSeek API Key。
+推荐路径下浏览器端不会接触 DeepSeek API Key：密钥只存在于本地 `.env` 或 Netlify 环境变量。设置页允许用户输入本次会话临时 key，该 key 只保存在当前标签页内存中，并通过同源代理请求头传递，不会写入 localStorage、执行记录、状态面板或 AI prompt。
 
 ## 请求 Payload
 
@@ -51,15 +51,50 @@ Content-Type: application/json
   "transcript": "月亮换个梦幻感",
   "localReason": "暂不支持这条指令。",
   "scene": {
+    "revision": 3,
     "objects": [
       {
+        "id": "shape-1",
         "name": "月亮",
+        "groupId": "asset-1",
         "groupName": "夜空",
+        "partId": "part-moon",
+        "partName": "月亮",
         "kind": "circle",
-        "fill": "#2563eb"
+        "fill": "#2563eb",
+        "stroke": "#111827",
+        "x": 120,
+        "y": 80,
+        "width": 140,
+        "height": 100
       }
     ],
-    "selectedName": "月亮"
+    "assets": [
+      {
+        "groupId": "asset-1",
+        "groupName": "夜空",
+        "bounds": { "x": 120, "y": 80, "width": 140, "height": 100 },
+        "parts": [
+          {
+            "objectId": "shape-1",
+            "name": "月亮",
+            "partId": "part-moon",
+            "partName": "月亮",
+            "kind": "circle",
+            "fill": "#2563eb",
+            "bounds": { "x": 120, "y": 80, "width": 140, "height": 100 }
+          }
+        ]
+      }
+    ],
+    "selectedName": "月亮",
+    "selection": {
+      "scope": "group",
+      "id": "asset-1",
+      "name": "夜空",
+      "groupId": "asset-1",
+      "groupName": "夜空"
+    }
   }
 }
 ```
@@ -68,8 +103,11 @@ Content-Type: application/json
 
 - `transcript`：本轮语音识别文本。
 - `localReason`：本地规则无法执行或需要澄清的原因。
-- `scene.objects`：当前画布对象摘要，只包含名称、素材组名、形状和颜色。
+- `scene.revision`：当前场景版本，用于理解连续语音时的上下文新旧。
+- `scene.objects`：当前画布对象摘要，包含稳定 ID、素材组、局部部件、形状、颜色、位置和尺寸。
+- `scene.assets`：按素材组聚合的资产树，便于 AI 判断“帽子”“窗户”等局部属于哪个整体。
 - `scene.selectedName`：当前选中对象名称，没有选中时为 `null`。
+- `scene.selection`：当前选中粒度，`group` 表示整组，`part` 表示局部。
 - `clarificationContext`：上一轮澄清上下文，仅在多轮补充时出现。
 
 多轮澄清请求示例：
@@ -84,8 +122,11 @@ Content-Type: application/json
     "reason": "缺少明确对象"
   },
   "scene": {
+    "revision": 0,
     "objects": [],
-    "selectedName": null
+    "assets": [],
+    "selectedName": null,
+    "selection": null
   }
 }
 ```
@@ -148,6 +189,59 @@ DeepSeek 必须优先返回包裹格式：
 
 - 必须包含 `color`、`strokeColor` 或 `strokeWidth` 至少一个。
 - 用户提到已有对象名称时，优先使用 `selector.mode = "by_name"`。
+- 局部对象必须带 `scope: "part"`，整组对象必须带 `scope: "group"`。
+
+### 局部删除或替换
+
+```json
+{
+  "schemaVersion": "1.0",
+  "intent": {
+    "type": "revise_asset_part",
+    "operation": "delete",
+    "selector": {
+      "mode": "by_part_name",
+      "name": "帽子",
+      "withinGroupName": "小猫",
+      "scope": "part"
+    }
+  }
+}
+```
+
+```json
+{
+  "schemaVersion": "1.0",
+  "intent": {
+    "type": "revise_asset_part",
+    "operation": "replace",
+    "selector": {
+      "mode": "by_id",
+      "objectId": "shape-8",
+      "scope": "part"
+    },
+    "attachTo": {
+      "mode": "by_group_id",
+      "groupId": "asset-cat",
+      "scope": "group"
+    },
+    "recipe": [
+      {
+        "shape": "rectangle",
+        "name": "蓝色帽檐",
+        "partName": "帽子",
+        "color": "#2563eb"
+      }
+    ]
+  }
+}
+```
+
+要求：
+
+- `revise_asset_part` 必须包含 `operation` 和局部 `selector`。
+- 删除帽子、窗户、门、屋顶等局部时不能返回 `delete_object all` 或整组 selector。
+- 替换局部时，新配方通过 `attachTo` 附加回原素材组。
 
 ### 移动对象
 
@@ -368,7 +462,7 @@ DeepSeek 返回不安全内容：
 
 ## 手工联调步骤
 
-1. 确认 `.env.local` 已配置 DeepSeek 环境变量。
+1. 确认 `.env` 已配置 DeepSeek 环境变量，或在设置页临时输入本次会话 key。
 2. 运行 `npm run dev`。
 3. 打开 `http://127.0.0.1:5173/`。
 4. 授权麦克风。

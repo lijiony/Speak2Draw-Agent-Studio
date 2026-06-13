@@ -5,7 +5,10 @@ import type { AiIntentRequestPayload } from './aiIntentContract';
 const payload: AiIntentRequestPayload = {
   transcript: '画一个红色圆形',
   scene: {
+    revision: 0,
     objects: [],
+    assets: [],
+    selection: null,
     selectedName: null
   }
 };
@@ -88,7 +91,7 @@ describe('deepSeekIntentProxy', () => {
 
   it('校验代理请求载荷结构', () => {
     expect(isAiIntentPayload(payload)).toBe(true);
-    expect(isAiIntentPayload({ transcript: '画圆', scene: { objects: [] } })).toBe(true);
+    expect(isAiIntentPayload({ transcript: '画圆', scene: { objects: [], revision: 0, assets: [], selection: null, selectedName: null } })).toBe(true);
     expect(isAiIntentPayload({ transcript: '画圆', scene: {} })).toBe(false);
     expect(isAiIntentPayload({ scene: { objects: [] } })).toBe(false);
   });
