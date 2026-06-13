@@ -28,7 +28,14 @@ test('导航页两个入口按钮都可以进入语音绘图工作台', async ({
 
   await page.goto('/');
   await expect(page.locator('main[aria-label="Speak2Draw 导航页"]')).toBeVisible();
+  await expect(page.locator('.landing-nav')).toContainText('S2D');
+  await expect(page.locator('.landing-nav')).toContainText('canan');
   await expect(page.getByRole('heading', { name: 'AI 语音绘图工具' })).toBeVisible();
+  await expect(page.locator('.landing-primary-button')).toContainText(/Speak2Draw-\s*Agent-Studio/);
+  await expect(page.locator('.landing-info-panel')).not.toHaveClass(/is-open/);
+  await page.locator('.landing-ink-card').click();
+  await expect(page.locator('.landing-info-panel')).toHaveClass(/is-open/);
+  await expect(page.locator('.landing-info-panel article')).toHaveCount(4);
   await expect(page.locator('.landing-shell button')).toHaveCount(2);
 
   await page.getByRole('button', { name: '进入', exact: true }).click();

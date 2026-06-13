@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   ArrowRight,
   Bot,
@@ -639,89 +639,77 @@ export const App = () => {
   );
 };
 
-const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => (
-  <main className="landing-shell" aria-label="Speak2Draw 导航页">
-    <div className="landing-background" aria-hidden="true">
-      <div className="landing-grid" />
-      <div className="landing-aurora one" />
-      <div className="landing-aurora two" />
-    </div>
-    <header className="landing-nav" aria-label="导航">
-      <strong>S2D</strong>
-      <nav aria-label="项目能力">
-        <span>语音绘图</span>
-        <span>AI 理解</span>
-        <span>SVG 画布</span>
-      </nav>
-      <button type="button" onClick={onEnter}>
-        进入
-      </button>
-    </header>
+const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const title = Array.from('AI 语音绘图工具');
 
-    <section className="landing-hero">
-      <p className="landing-eyebrow">Speak2Draw-Agent-Studio</p>
-      <h1>
-        <span>AI 语音绘图工具</span>
-      </h1>
-      <p className="landing-copy">
-        不使用鼠标和键盘，用自然语言语音完成绘图创作、局部编辑、AI 解析和 SVG 实时渲染。
-      </p>
-      <button className="landing-primary-button" type="button" onClick={onEnter}>
-        <span>Speak2Draw-Agent-Studio</span>
-        <strong>
-          进入工作台
-          <ArrowRight size={16} />
-        </strong>
-      </button>
-    </section>
+  return (
+    <main className={`landing-shell${previewOpen ? ' preview-open' : ''}`} aria-label="Speak2Draw 导航页">
+      <div className="landing-background" aria-hidden="true" />
+      <header className="landing-nav" aria-label="导航">
+        <strong>S2D</strong>
+        <span>canan</span>
+        <button type="button" onClick={onEnter}>
+          进入
+        </button>
+      </header>
 
-    <section className="landing-preview" aria-label="工作台预览">
-      <div className="preview-window">
-        <div className="preview-toolbar">
-          <span />
-          <span />
-          <span />
-          <b>Voice Canvas</b>
-        </div>
-        <div className="preview-content">
-          <aside>
-            <i />
-            <strong>正在监听</strong>
-            <p>画一个戴帽子的小猫</p>
-            <span>AI 理解为素材组</span>
-          </aside>
-          <div className="preview-canvas">
-            <div className="preview-cat">
-              <span className="cat-hat" />
-              <span className="cat-face" />
-              <span className="cat-ear left" />
-              <span className="cat-ear right" />
-            </div>
-          </div>
-          <aside>
-            <strong>当前对象</strong>
-            <p>戴帽子的小猫</p>
-            <span>SVG 渲染完成</span>
-          </aside>
-        </div>
-      </div>
-      <div className="landing-feature-panel">
-        <FeatureTeaser icon={<Radio size={20} />} title="中文语音绘图" text="面向中文绘图命令的端点判断、停顿容错和实时反馈。" />
-        <FeatureTeaser icon={<BrainCircuit size={20} />} title="AI 指令理解" text="本地规则不确定时走 AI 兜底，输出安全 JSON 绘图计划。" />
-        <FeatureTeaser icon={<Bot size={20} />} title="局部可编辑素材" text="支持素材组和局部部件，能选择房子窗户或删除小猫帽子。" />
-        <FeatureTeaser icon={<Layers3 size={20} />} title="SVG 实时画布" text="矢量画布即时更新，保留撤销、重做、清空和导出能力。" />
-      </div>
-    </section>
-  </main>
-);
+      <section className="landing-hero" aria-label="进入工作台">
+        <h1 className="landing-title" aria-label="AI 语音绘图工具">
+          {title.map((letter, index) => (
+            <span
+              aria-hidden="true"
+              className="landing-title-letter"
+              key={`${letter}-${index}`}
+              style={{ '--letter-index': index } as CSSProperties}
+            >
+              {letter === ' ' ? '\u00A0' : letter}
+            </span>
+          ))}
+        </h1>
+        <button className="landing-primary-button" type="button" onClick={onEnter}>
+          <span>Speak2Draw-Agent-Studio</span>
+          <strong>
+            进入工作台
+            <ArrowRight size={16} />
+          </strong>
+        </button>
+      </section>
 
-const FeatureTeaser = ({ icon, title, text }: { icon: ReactNode; title: string; text: string }) => (
-  <article className="feature-teaser">
-    <div>{icon}</div>
-    <h2>{title}</h2>
-    <p>{text}</p>
-  </article>
-);
+      <section className={`landing-info-panel${previewOpen ? ' is-open' : ''}`} aria-label="产品信息面板">
+        {[
+          ['语音输入', '只用语音发起绘图、选择、修改与导出。'],
+          ['AI 理解', '把自然语言拆解成可执行绘图步骤。'],
+          ['画布执行', '使用 SVG 渲染对象、分组和局部编辑。'],
+          ['状态反馈', '展示识别、解析、执行和延迟状态。']
+        ].map(([titleText, detail], index) => (
+          <article key={titleText} style={{ '--info-index': index } as CSSProperties}>
+            <span>{String(index + 1).padStart(2, '0')}</span>
+            <strong>{titleText}</strong>
+            <p>{detail}</p>
+          </article>
+        ))}
+      </section>
+
+      <section
+        className="landing-ink-card"
+        aria-label="产品预览图"
+        aria-pressed={previewOpen}
+        onClick={() => setPreviewOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setPreviewOpen((open) => !open);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+      >
+        <div className="ink-card-surface" />
+      </section>
+    </main>
+  );
+};
 
 const VoiceTopDeck = ({
   status,
