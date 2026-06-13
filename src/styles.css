@@ -5258,9 +5258,21 @@ h2 {
 }
 
 .landing-primary-button > strong svg {
+  position: absolute;
+  top: 50%;
+  left: calc(50% + 50px);
   width: 14px;
   height: 14px;
   stroke-width: 2.4;
+  transform: translateY(-50%);
+}
+
+.landing-enter-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
 }
 
 @media (max-width: 760px) {

@@ -730,7 +730,7 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
         <button className="landing-primary-button" type="button" onClick={onEnter}>
           <span>Speak2Draw-Agent-Studio</span>
           <strong>
-            进入工作台
+            <span className="landing-enter-label">进入工作台</span>
             <ArrowRight size={16} />
           </strong>
         </button>
