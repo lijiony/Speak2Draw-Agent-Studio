@@ -14,6 +14,10 @@ import {
   Mic,
   MicOff,
   MoveRight,
+  PanelBottomClose,
+  PanelBottomOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Palette,
   Radio,
   Redo2,
@@ -44,6 +48,7 @@ import {
   type AppSettings,
   type PublicSettingsSnapshot
 } from './settings/appSettings';
+import { detectLayoutCommand, workbenchLayoutMessage, type WorkbenchLayout } from './ui/workbenchLayout';
 
 type AiResolutionStatus = {
   state: 'idle' | 'local' | 'checking' | 'used' | 'fallback';
@@ -89,6 +94,7 @@ declare global {
       getClarification: () => ClarificationState | null;
       getVoiceDiagnostics: () => SpeechDiagnostics;
       getSettings: () => PublicSettingsSnapshot;
+      getWorkbenchLayout: () => WorkbenchLayout;
     };
   }
 }
@@ -117,6 +123,8 @@ export const App = () => {
   const [sessionKeyConfigured, setSessionKeyConfigured] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('ai');
+  const [workbenchLayout, setWorkbenchLayout] = useState<WorkbenchLayout>('focus');
+  const workbenchLayoutRef = useRef<WorkbenchLayout>('focus');
   const [aiConnectionStatus, setAiConnectionStatus] = useState<AiConnectionStatus>({
     state: 'idle',
     message: '尚未测试 AI 连接。'
@@ -144,6 +152,10 @@ export const App = () => {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    workbenchLayoutRef.current = workbenchLayout;
+  }, [workbenchLayout]);
 
   const setSettings = useCallback((next: AppSettings | ((current: AppSettings) => AppSettings)) => {
     setSettingsState((current) => {
@@ -262,6 +274,34 @@ export const App = () => {
           ...items
         ].slice(0, 8));
         pushWorkflowEvent('设置已处理', message, result.ok ? 'ok' : 'warning');
+        speak(message);
+        return;
+      }
+
+      const layoutCommand = detectLayoutCommand(transcript.text);
+      if (layoutCommand) {
+        const message = workbenchLayoutMessage(layoutCommand);
+        const result: ExecutionResult = {
+          ok: true,
+          message,
+          scene: currentScene,
+          commandsExecuted: 0,
+          latencyMs: Math.max(0, Math.round(performance.now() - transcript.receivedAt))
+        };
+        setWorkbenchLayout(layoutCommand);
+        setLastTranscript(transcript.text);
+        setLastResult(result);
+        setHistory((items) => [
+          {
+            transcript: transcript.text,
+            message,
+            source: '界面布局',
+            ok: true,
+            time: formatClockTime()
+          },
+          ...items
+        ].slice(0, 8));
+        pushWorkflowEvent('布局已切换', message, 'ok');
         speak(message);
         return;
       }
@@ -402,7 +442,8 @@ export const App = () => {
       getAiStatus: () => aiStatusRef.current,
       getClarification: () => clarificationRef.current,
       getVoiceDiagnostics: () => voiceDiagnosticsRef.current ?? EMPTY_VOICE_DIAGNOSTICS,
-      getSettings: () => toPublicSettingsSnapshot(settingsRef.current, sessionKeyConfigured)
+      getSettings: () => toPublicSettingsSnapshot(settingsRef.current, sessionKeyConfigured),
+      getWorkbenchLayout: () => workbenchLayoutRef.current
     };
 
     return () => {
@@ -501,14 +542,14 @@ export const App = () => {
             onClose={() => setSettingsOpen(false)}
           />
         ) : (
-          <div className="studio-console">
+          <div className={`studio-console layout-${workbenchLayout}`}>
             <DiagnosticsColumn
               status={status}
-            error={error}
-            activity={activity}
-            diagnostics={diagnostics}
-            showInterimTranscript={settings.showInterimTranscript}
-            clarification={clarification}
+              error={error}
+              activity={activity}
+              diagnostics={diagnostics}
+              showInterimTranscript={settings.showInterimTranscript}
+              clarification={clarification}
               lastResult={lastResult}
               lastTranscript={lastTranscript}
               history={history}
@@ -521,7 +562,6 @@ export const App = () => {
               onMicrophoneTest={handleMicrophoneTest}
               onCommand={submitStudioCommand}
               onStatusPanelOpen={() => setStatusPanelOpen(true)}
-              onSettingsOpen={() => setSettingsOpen(true)}
               onPolicyModeChange={setVoicePolicyMode}
               start={start}
               stop={stop}
@@ -532,11 +572,36 @@ export const App = () => {
                 scene={scene}
                 selected={selected}
                 hintsCollapsed={canvasHintsCollapsed}
+                layout={workbenchLayout}
+                onLayoutChange={setWorkbenchLayout}
+                onStatusPanelOpen={() => setStatusPanelOpen(true)}
+                onSettingsOpen={() => setSettingsOpen(true)}
                 onToggleHints={() => setCanvasHintsCollapsed((collapsed) => !collapsed)}
               />
               <CanvasActionBar onCommand={submitStudioCommand} />
-              <ObjectWorkbench selected={selected} scene={scene} lastTranscript={lastTranscript} lastResult={lastResult} aiStatus={aiStatus} onCommand={submitStudioCommand} />
             </div>
+            {workbenchLayout === 'side-inspector' ? (
+              <ObjectWorkbench
+                variant="side"
+                selected={selected}
+                scene={scene}
+                lastTranscript={lastTranscript}
+                lastResult={lastResult}
+                aiStatus={aiStatus}
+                onCommand={submitStudioCommand}
+              />
+            ) : null}
+            {workbenchLayout === 'bottom-inspector' ? (
+              <ObjectWorkbench
+                variant="bottom"
+                selected={selected}
+                scene={scene}
+                lastTranscript={lastTranscript}
+                lastResult={lastResult}
+                aiStatus={aiStatus}
+                onCommand={submitStudioCommand}
+              />
+            ) : null}
           </div>
         )}
         {!settingsOpen && !statusPanelOpen && toastEvent ? <WorkflowToast event={toastEvent} /> : null}
@@ -733,7 +798,6 @@ const DiagnosticsColumn = ({
   onMicrophoneTest,
   onCommand,
   onStatusPanelOpen,
-  onSettingsOpen,
   onPolicyModeChange,
   start,
   stop
@@ -756,7 +820,6 @@ const DiagnosticsColumn = ({
   onMicrophoneTest: () => void;
   onCommand: CommandAction;
   onStatusPanelOpen: () => void;
-  onSettingsOpen: () => void;
   onPolicyModeChange: (mode: EndpointPolicyMode) => void;
   start: () => void;
   stop: () => void;
@@ -788,8 +851,6 @@ const DiagnosticsColumn = ({
       <div className="soft-divider" />
       <CommandGuide onCommand={onCommand} />
       <HistoryTimeline history={history} />
-      <div className="soft-divider" />
-      <ActionDock onCommand={onCommand} onSettingsOpen={onSettingsOpen} />
     </aside>
   );
 };
@@ -875,40 +936,23 @@ const VoiceControlPanel = ({
   );
 };
 
-const ActionDock = ({ onCommand, onSettingsOpen }: { onCommand: CommandAction; onSettingsOpen: () => void }) => (
-  <section className="column-section action-dock" aria-label="快捷操作">
-    <div className="action-row">
-      <button className="icon-action" type="button" aria-label="撤销" title="撤销" onClick={() => void onCommand('撤销')}>
-        <Undo2 size={18} />
-      </button>
-      <button className="icon-action" type="button" aria-label="重做" title="重做" onClick={() => void onCommand('重做')}>
-        <Redo2 size={18} />
-      </button>
-      <button className="icon-action" type="button" aria-label="清空画布" title="清空画布" onClick={() => void onCommand('清空画布')}>
-        <Trash2 size={18} />
-      </button>
-      <button className="icon-action" type="button" aria-label="导出SVG" title="导出SVG" onClick={() => void onCommand('导出图片')}>
-        <Download size={18} />
-      </button>
-      <button className="icon-action" type="button" aria-label="帮助" title="帮助" onClick={() => void onCommand('我能说什么')}>
-        <HelpCircle size={18} />
-      </button>
-      <button className="icon-action" type="button" aria-label="打开设置" title="打开设置" onClick={onSettingsOpen}>
-        <Settings size={18} />
-      </button>
-    </div>
-  </section>
-);
-
 const CanvasStage = ({
   scene,
   selected,
   hintsCollapsed,
+  layout,
+  onLayoutChange,
+  onStatusPanelOpen,
+  onSettingsOpen,
   onToggleHints
 }: {
   scene: SceneState;
   selected?: SceneObject;
   hintsCollapsed: boolean;
+  layout: WorkbenchLayout;
+  onLayoutChange: (layout: WorkbenchLayout) => void;
+  onStatusPanelOpen: () => void;
+  onSettingsOpen: () => void;
   onToggleHints: () => void;
 }) => (
   <section className={`canvas-stage canvas-panel ${hintsCollapsed ? 'hints-collapsed' : ''}`} aria-label="绘图画布">
@@ -924,6 +968,13 @@ const CanvasStage = ({
         <X size={18} />
       </button>
     </div>
+    <CanvasLayoutControls
+      layout={layout}
+      selectedName={selected?.groupName ?? selected?.partName ?? selected?.name ?? '未选中'}
+      onLayoutChange={onLayoutChange}
+      onStatusPanelOpen={onStatusPanelOpen}
+      onSettingsOpen={onSettingsOpen}
+    />
     <div className="canvas-surface">
       {!hintsCollapsed ? (
         <div className="axis-y" aria-hidden="true">
@@ -947,17 +998,62 @@ const CanvasStage = ({
         </div>
       ) : null}
     </div>
-    {!hintsCollapsed ? (
-      <div className="canvas-floating-badges" aria-hidden="true">
-        <span>{selected?.name ?? '未选中'}</span>
-        <span>SVG</span>
-      </div>
-    ) : null}
   </section>
 );
 
-const CanvasActionBar = ({ onCommand }: { onCommand: CommandAction }) => (
-  <section className="canvas-action-bar" aria-label="画布操作">
+const CanvasLayoutControls = ({
+  layout,
+  selectedName,
+  onLayoutChange,
+  onStatusPanelOpen,
+  onSettingsOpen
+}: {
+  layout: WorkbenchLayout;
+  selectedName: string;
+  onLayoutChange: (layout: WorkbenchLayout) => void;
+  onStatusPanelOpen: () => void;
+  onSettingsOpen: () => void;
+}) => {
+  const sideOpen = layout === 'side-inspector';
+  const bottomOpen = layout === 'bottom-inspector';
+  return (
+    <div className="canvas-layout-controls" aria-label="画布布局控制">
+      <div className="canvas-control-card">
+        <button
+          type="button"
+          aria-label={sideOpen ? '隐藏对象检查器' : '显示右侧对象检查器'}
+          title={sideOpen ? '隐藏对象检查器' : '显示右侧对象检查器'}
+          aria-pressed={sideOpen}
+          onClick={() => onLayoutChange(sideOpen ? 'focus' : 'side-inspector')}
+        >
+          {sideOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+        </button>
+        <button
+          type="button"
+          aria-label={bottomOpen ? '关闭底部对象检查器' : '显示底部对象检查器'}
+          title={bottomOpen ? '关闭底部对象检查器' : '显示底部对象检查器'}
+          aria-pressed={bottomOpen}
+          onClick={() => onLayoutChange(bottomOpen ? 'focus' : 'bottom-inspector')}
+        >
+          {bottomOpen ? <PanelBottomClose size={15} /> : <PanelBottomOpen size={15} />}
+        </button>
+        <button type="button" aria-label="打开状态信息" title="打开状态信息" onClick={onStatusPanelOpen}>
+          <GaugeCircle size={15} />
+        </button>
+        <button type="button" aria-label="打开设置" title="打开设置" onClick={onSettingsOpen}>
+          <Settings size={15} />
+        </button>
+      </div>
+      <div className="canvas-micro-tags" aria-label="画布状态提示">
+        <span title={selectedName}>{selectedName}</span>
+        <span>SVG</span>
+      </div>
+    </div>
+  );
+};
+
+const CanvasActionBar = ({ onCommand, compact = false }: { onCommand: CommandAction; compact?: boolean }) => (
+  <section className={`canvas-action-bar ${compact ? 'compact' : ''}`} aria-label="画布操作">
     <div className="section-label">
       <Layers3 size={17} />
       <h2>画布操作</h2>
@@ -1192,6 +1288,7 @@ const InfoBlock = ({ title, value, tone = 'default' }: { title: string; value: s
 );
 
 const ObjectWorkbench = ({
+  variant,
   selected,
   scene,
   lastTranscript,
@@ -1199,6 +1296,7 @@ const ObjectWorkbench = ({
   aiStatus,
   onCommand
 }: {
+  variant: 'side' | 'bottom';
   selected?: SceneObject;
   scene: SceneState;
   lastTranscript: string;
@@ -1213,7 +1311,7 @@ const ObjectWorkbench = ({
   const fillSummary = summarizeFill(targetObjects);
 
   return (
-    <section className="object-workbench" aria-label="当前对象检查器">
+    <section className={`object-workbench ${variant}`} aria-label="当前对象检查器">
       <div className="object-summary">
         <div className="section-label">
           <CircleDot size={17} />
@@ -1582,7 +1680,7 @@ const StatusSummary = ({
     <div className="panel-heading spaced">
       <div className="section-label">
         <BrainCircuit size={17} />
-        <h2>状态信息</h2>
+        <h2>绘图 AI 状态</h2>
       </div>
       <button type="button" className="status-open-button" aria-label="打开状态信息" onClick={onOpen}>
         打开
@@ -1595,12 +1693,12 @@ const StatusSummary = ({
         <strong>{diagnostics.phase}</strong>
       </span>
       <span>
-        AI
+        绘图 AI
         <strong>{aiStatus.state}</strong>
       </span>
     </div>
     <p>{humanAiMessage(aiStatus)}</p>
-    <small>也可以说“打开状态信息”。</small>
+    <small>这里显示最近一次绘图指令；设置页的“测试 AI 连接”只验证接口连通性。</small>
   </section>
 );
 
@@ -1935,8 +2033,9 @@ const SettingsWorkspace = ({
       <div className="settings-heading compact">
         <BrainCircuit size={18} />
         <div>
-          <h2>连接状态</h2>
+          <h2>AI 连接测试</h2>
           <p>{aiConnectionStatus.message}</p>
+          <small>这是设置页发起的接口连通性测试；画布里的“绘图 AI 状态”只记录最近一次语音绘图是否使用 AI 解析。</small>
         </div>
       </div>
       <dl>

@@ -20,6 +20,12 @@ final result: passed
 - 中央主画布下方新增画布操作条；当前对象检查器重排为对象摘要、属性表、语音执行链路、能力工具带和建议语音。
 - 右侧重构为 AI 执行证据面板：AI 解析状态、当前对象属性、指令执行链路、澄清流程、常用语音和执行记录。
 - 保留“少容器、多分区”原则，增加内容但避免每个小模块都变成独立卡片。
+- 画布优先版已切换为三态布局：默认专注画布，右侧对象检查器和底部对象检查器通过画布浮窗小按钮或语音切换。
+- 画布操作栏保留在右侧画布区域最下面，不放入左侧控制栏；画布会按剩余高度自适应缩放，避免素材组和选中框被裁切。
+- 画布右上角常驻四按钮浮窗：右侧检查器、底部检查器、状态信息、设置；下方以极小标签显示当前选中对象和 SVG 渲染状态。
+- 左侧不再提供设置快捷图标；设置入口已转移到画布浮窗，状态信息默认只以小摘要和浮层存在。
+- “绘图 AI 状态”和“AI 连接测试”已分开标注：前者代表最近一次语音绘图是否走 AI，后者只验证设置页接口连通性。
+- 右侧检查器、底部检查器和画布操作中的窄按钮均已强制横排；空间不足时省略，不再出现中文逐字竖排。
 
 ## 交互结果
 
@@ -32,14 +38,17 @@ final result: passed
 
 ## 验证记录
 
-- `npm test`：15 个测试文件、105 条用例通过。
+- `npm test -- --run`：17 个测试文件、122 条用例通过。
 - `npm run build`：TypeScript 与 Vite 生产构建通过。
-- `npm run test:e2e`：18 条端到端测试通过。
+- `npm run test:e2e`：30 条端到端测试通过。
 - Playwright 截图：
-  - `test-results/reference-rich-redesign-v2/desktop-2048.png`
-  - `test-results/reference-rich-redesign-v2/tablet-1100.png`
-  - `test-results/reference-rich-redesign-v2/mobile-390.png`
-- Playwright 布局指标：桌面、平板、手机均无横向滚动，按钮文字无溢出。
+  - `test-results/canvas-layout-qa/desktop-focus-1440x820.png`
+  - `test-results/canvas-layout-qa/desktop-side-1440x820.png`
+  - `test-results/canvas-layout-qa/desktop-side-1440x820-no-vertical-text.png`
+  - `test-results/canvas-layout-qa/desktop-bottom-1440x820.png`
+  - `test-results/canvas-layout-qa/tablet-focus-980x760.png`
+  - `test-results/canvas-layout-qa/mobile-focus-390x844.png`
+- Playwright 布局指标：桌面、右侧检查器、底部检查器、平板、手机均无文档滚动；小猫素材组选中框均在 SVG 画布范围内。
 
 ## 后续 P3 可优化
 

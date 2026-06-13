@@ -8,6 +8,7 @@ declare global {
       getAiStatus: () => { state: string; message: string };
       getClarification: () => { originalTranscript: string; question: string } | null;
       getVoiceDiagnostics: () => { policyMode: string; phase: string; interimText: string | null; finalText: string | null };
+      getWorkbenchLayout: () => 'focus' | 'side-inspector' | 'bottom-inspector';
       getSettings: () => { aiModel: string; aiBaseUrl: string; sessionKeyConfigured: boolean; voicePolicyMode: string; aiFallbackEnabled: boolean };
     };
   }
@@ -222,6 +223,7 @@ test('画布提示和能力区不会伪装成不可用命令按钮', async ({ pa
   await page.getByRole('button', { name: '收起画布提示' }).click();
   await expect(page.getByText('提示已收起')).toBeVisible();
   await expect(page.getByRole('button', { name: '显示画布提示' })).toBeVisible();
+  await page.getByRole('button', { name: '显示右侧对象检查器' }).click();
   await expect(page.locator('.capability-toolbar button')).toHaveCount(0);
   await expect(page.locator('.capability-toolbar .capability-chip')).toHaveCount(10);
   await page.getByTitle('查看编辑指令').click();
@@ -546,6 +548,80 @@ test('DeepSeek 不可用时创作类指令使用本地安全素材配方兜底',
   expect(consoleErrors).toEqual([]);
 });
 
+test('画布专注布局完整显示小猫并通过浮窗切换检查器', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await page.route('**/api/ai/intent', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false,
+        provider: 'local',
+        reason: '测试环境使用本地素材配方。'
+      })
+    });
+  });
+
+  await submitVoiceText(page, '画一个戴帽子的小猫');
+  await expect(page.locator('svg .group-selection-box')).toHaveCount(1);
+  expect(await page.evaluate(() => window.__speak2drawTest?.getWorkbenchLayout())).toBe('focus');
+  await expect(page.locator('.object-workbench')).toHaveCount(0);
+  await expect(page.locator('.canvas-layout-controls')).toBeVisible();
+  await expect(page.locator('.canvas-micro-tags')).toContainText('SVG');
+
+  const selectionVisible = await page.locator('svg .group-selection-box').evaluate((box) => {
+    const bounds = box.getBoundingClientRect();
+    const canvas = document.querySelector('.drawing-canvas')?.getBoundingClientRect();
+    if (!canvas) return false;
+    return bounds.top >= canvas.top && bounds.left >= canvas.left && bounds.bottom <= canvas.bottom && bounds.right <= canvas.right;
+  });
+  expect(selectionVisible).toBe(true);
+
+  await page.getByRole('button', { name: '显示右侧对象检查器' }).click();
+  expect(await page.evaluate(() => window.__speak2drawTest?.getWorkbenchLayout())).toBe('side-inspector');
+  await expect(page.locator('.object-workbench.side')).toBeVisible();
+  await expect(page.locator('.object-workbench.side')).toContainText('当前对象检查器');
+
+  await page.getByRole('button', { name: '隐藏对象检查器' }).click();
+  expect(await page.evaluate(() => window.__speak2drawTest?.getWorkbenchLayout())).toBe('focus');
+  await expect(page.locator('.object-workbench')).toHaveCount(0);
+
+  await page.getByRole('button', { name: '显示底部对象检查器' }).click();
+  expect(await page.evaluate(() => window.__speak2drawTest?.getWorkbenchLayout())).toBe('bottom-inspector');
+  await expect(page.locator('.object-workbench.bottom')).toBeVisible();
+
+  await page.locator('.canvas-layout-controls button[aria-label="打开状态信息"]').click();
+  await expect(page.getByRole('dialog', { name: '状态信息' })).toBeVisible();
+  await page.getByRole('button', { name: '关闭状态信息' }).click();
+  await expect(page.getByRole('dialog', { name: '状态信息' })).toBeHidden();
+
+  await page.locator('.canvas-layout-controls button[aria-label="打开设置"]').click();
+  await expect(page.locator('section[aria-label="设置页面"]')).toBeVisible();
+  await submitVoiceText(page, '关闭设置');
+  await expect(page.locator('section[aria-label="设置页面"]')).toBeHidden();
+  expect(await page.locator('aside[aria-label="语音控制栏"] button[aria-label="打开设置"]').count()).toBe(0);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('语音可以切换画布检查器布局', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+
+  await submitVoiceText(page, '打开对象信息');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getWorkbenchLayout())).toBe('side-inspector');
+  await expect(page.locator('.object-workbench.side')).toBeVisible();
+  await expect(systemFeedback(page)).toContainText('已打开右侧对象检查器。');
+
+  await submitVoiceText(page, '打开底部栏');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getWorkbenchLayout())).toBe('bottom-inspector');
+  await expect(page.locator('.object-workbench.bottom')).toBeVisible();
+
+  await submitVoiceText(page, '恢复画布模式');
+  expect(await page.evaluate(() => window.__speak2drawTest?.getWorkbenchLayout())).toBe('focus');
+  await expect(page.locator('.object-workbench')).toHaveCount(0);
+  expect(consoleErrors).toEqual([]);
+});
+
 test('语音可以打开和关闭状态信息浮层', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 
@@ -661,7 +737,15 @@ test('左右栏和设置页使用独立滚动，不带动整个页面', async ({
   expect(documentScroll.scrollHeight).toBe(documentScroll.clientHeight);
 
   await expectScrollableRegion(page, 'aside[aria-label="语音控制栏"]');
-  await expectScrollableRegion(page, '.studio-main');
+  const canvasMain = await page.locator('.studio-main').evaluate((element) => ({
+    overflowY: window.getComputedStyle(element).overflowY,
+    overscrollY: window.getComputedStyle(element).overscrollBehaviorY
+  }));
+  expect(canvasMain.overflowY).toBe('hidden');
+  expect(canvasMain.overscrollY).toBe('contain');
+
+  await page.getByRole('button', { name: '显示右侧对象检查器' }).click();
+  await expectScrollableRegion(page, '.object-workbench.side');
 
   await page.getByRole('button', { name: '打开设置' }).click();
   await expect(page.locator('section[aria-label="设置页面"]')).toBeVisible();
