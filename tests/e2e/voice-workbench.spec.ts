@@ -36,6 +36,13 @@ test('导航页两个入口按钮都可以进入语音绘图工作台', async ({
   await page.locator('.landing-ink-card').click();
   await expect(page.locator('.landing-info-panel')).toHaveClass(/is-open/);
   await expect(page.locator('.landing-info-panel article')).toHaveCount(4);
+  await page.getByRole('button', { name: /理解意图/ }).hover();
+  await expect(page.locator('#landing-flow-detail')).toContainText('如何保证靠谱');
+  await expect(page.locator('#landing-flow-detail')).toContainText('受控 JSON 指令');
+  await page.getByRole('button', { name: /拆解步骤/ }).click();
+  await expect(page.locator('#landing-flow-detail')).toContainText('素材组和局部部件');
+  await page.getByRole('button', { name: '关闭流程详情' }).click();
+  await expect(page.locator('#landing-flow-detail')).toHaveCount(0);
   await page.getByRole('button', { name: '关闭产品信息面板' }).click();
   await expect(page.locator('.landing-info-panel')).not.toHaveClass(/is-open/);
   await expect(page.locator('.landing-nav button, .landing-primary-button')).toHaveCount(2);

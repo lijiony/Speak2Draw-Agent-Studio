@@ -641,29 +641,63 @@ export const App = () => {
 
 const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [activeFlowIndex, setActiveFlowIndex] = useState<number | null>(null);
+  const [pinnedFlowIndex, setPinnedFlowIndex] = useState<number | null>(null);
   const title = Array.from('AI 语音绘图工具');
   const infoColumns = [
     {
       icon: <Radio size={15} />,
-      title: '中文语音绘图',
-      detail: 'Natural language processing optimized for precise Chinese voice commands.'
+      title: '说出想法',
+      detail: '从一句中文语音开始，不需要鼠标或键盘。',
+      what: '浏览器麦克风持续收音，把用户说的完整句子整理成可解析文本，例如“画一个戴帽子的小猫”。',
+      why: '纯语音绘图最怕半句话就执行。系统会等待最终识别结果，并把未听清、低置信度和超时状态单独反馈。',
+      proof: '已实现麦克风测试、收音波形、端点策略、无清晰语音提示和语音状态浮层。',
+      example: '试试说：画一个红色圆形。'
     },
     {
       icon: <BrainCircuit size={15} />,
-      title: 'AI 指令理解',
-      detail: 'Context-aware intent recognition bridging voice and visual output.'
+      title: '理解意图',
+      detail: '本地规则先判断，复杂或模糊请求再交给 AI。',
+      what: '系统会把语音文本识别为创建、选择、修改、删除、查询、撤销或导出等绘图意图。',
+      why: '把听到的话和真正要做的事分开，能减少“听见了但做错了”的风险。',
+      proof: 'AI 只返回受控 JSON 指令，不直接改画布；设置页可测试连接，也能关闭 AI 兜底。',
+      example: '试试说：把帽子删掉，不好看。'
+    },
+    {
+      icon: <Layers3 size={15} />,
+      title: '拆解步骤',
+      detail: '把复杂创作拆成可回放、可撤销的绘图命令。',
+      what: '复杂对象会拆成素材组和局部部件，例如小猫包含脸、耳朵、眼睛、帽子。',
+      why: '用户后续要改局部时，系统能知道“帽子”和“整只小猫”的区别。',
+      proof: '已支持素材组选择、局部选择、删除帽子不删除小猫、复杂指令批量执行。',
+      example: '试试说：选择房子的窗户。'
     },
     {
       icon: <CheckCircle2 size={15} />,
-      title: '安全绘图引擎',
-      detail: 'Local-first execution ensuring privacy and instant rendering speed.'
-    },
-    {
-      icon: <Sparkles size={15} />,
-      title: 'SVG 实时画布',
-      detail: 'Infinite resolution vector generation dynamically updated via voice.'
+      title: '执行反馈',
+      detail: '画布更新、历史记录和状态解释同步出现。',
+      what: '绘图命令会更新 SVG 场景模型，并记录执行结果、失败原因、撤销栈和语音反馈。',
+      why: '用户看不到底层操作，所以每一步都要告诉用户系统理解了什么、执行了什么。',
+      proof: '已实现撤销重做、清空导出、状态信息浮层、AI 状态说明和延迟指标。',
+      example: '试试说：打开状态信息。'
     }
   ];
+  const visibleFlowIndex = previewOpen ? (pinnedFlowIndex ?? activeFlowIndex) : null;
+  const visibleFlow = visibleFlowIndex === null ? null : infoColumns[visibleFlowIndex];
+  const closePreview = () => {
+    setPreviewOpen(false);
+    setActiveFlowIndex(null);
+    setPinnedFlowIndex(null);
+  };
+  const togglePreview = () => {
+    setPreviewOpen((open) => {
+      if (open) {
+        setActiveFlowIndex(null);
+        setPinnedFlowIndex(null);
+      }
+      return !open;
+    });
+  };
 
   return (
     <main className={`landing-shell${previewOpen ? ' preview-open' : ''}`} aria-label="Speak2Draw 导航页">
@@ -698,30 +732,84 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
         </button>
       </section>
 
-      <section className={`landing-info-panel${previewOpen ? ' is-open' : ''}`} aria-label="产品信息面板">
-        <button className="landing-info-close" type="button" aria-label="关闭产品信息面板" onClick={() => setPreviewOpen(false)}>
+      <section
+        className={`landing-info-panel${previewOpen ? ' is-open' : ''}`}
+        aria-label="产品信息面板"
+        onMouseLeave={() => {
+          if (pinnedFlowIndex === null) setActiveFlowIndex(null);
+        }}
+      >
+        <button className="landing-info-close" type="button" aria-label="关闭产品信息面板" onClick={closePreview}>
           <X size={17} />
         </button>
         {infoColumns.map((item, index) => (
-          <article key={item.title} style={{ '--info-index': index } as CSSProperties}>
-            <span className="landing-info-icon" aria-hidden="true">
-              {item.icon}
-            </span>
-            <strong>{item.title}</strong>
-            <p>{item.detail}</p>
+          <article className={visibleFlowIndex === index ? 'is-active' : ''} key={item.title} style={{ '--info-index': index } as CSSProperties}>
+            <button
+              className="landing-flow-card"
+              type="button"
+              aria-pressed={pinnedFlowIndex === index}
+              aria-describedby={visibleFlowIndex === index ? 'landing-flow-detail' : undefined}
+              onClick={() => {
+                setPinnedFlowIndex((current) => (current === index ? null : index));
+                setActiveFlowIndex(index);
+              }}
+              onFocus={() => setActiveFlowIndex(index)}
+              onMouseEnter={() => setActiveFlowIndex(index)}
+            >
+              <span className="landing-info-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <strong>{item.title}</strong>
+              <p>{item.detail}</p>
+            </button>
           </article>
         ))}
+        {visibleFlow ? (
+          <aside className="landing-flow-detail" id="landing-flow-detail" aria-live="polite">
+            <button
+              className="landing-flow-detail-close"
+              type="button"
+              aria-label="关闭流程详情"
+              onClick={() => {
+                setActiveFlowIndex(null);
+                setPinnedFlowIndex(null);
+              }}
+            >
+              <X size={14} />
+            </button>
+            <span>{String((visibleFlowIndex ?? 0) + 1).padStart(2, '0')}</span>
+            <h2>{visibleFlow.title}</h2>
+            <dl>
+              <div>
+                <dt>这一步做什么</dt>
+                <dd>{visibleFlow.what}</dd>
+              </div>
+              <div>
+                <dt>为什么重要</dt>
+                <dd>{visibleFlow.why}</dd>
+              </div>
+              <div>
+                <dt>如何保证靠谱</dt>
+                <dd>{visibleFlow.proof}</dd>
+              </div>
+              <div>
+                <dt>示例语音</dt>
+                <dd>{visibleFlow.example}</dd>
+              </div>
+            </dl>
+          </aside>
+        ) : null}
       </section>
 
       <section
         className="landing-ink-card"
         aria-label="产品预览图"
         aria-pressed={previewOpen}
-        onClick={() => setPreviewOpen((open) => !open)}
+        onClick={togglePreview}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            setPreviewOpen((open) => !open);
+            togglePreview();
           }
         }}
         role="button"
