@@ -734,7 +734,6 @@ p {
 .canvas-panel,
 .object-workbench,
 .ai-status-block,
-.command-guide,
 .history-strip {
   border: 1px solid #d8e5f2;
   border-radius: 8px;
@@ -1590,10 +1589,13 @@ h2 {
 .pipeline span,
 .pipeline strong {
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   color: #2563eb;
   background: #eff6ff;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .pipeline span.active {
@@ -1684,11 +1686,12 @@ h2 {
 .ai-row {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr 0.8fr;
+  grid-template-columns: minmax(64px, 0.82fr) minmax(0, 1fr) minmax(44px, auto);
   align-items: center;
-  min-height: 48px;
+  min-height: 40px;
   border-bottom: 0;
-  padding: 0 4px;
+  gap: 8px;
+  padding: 0 2px;
 }
 
 .ai-row::after {
@@ -1707,28 +1710,42 @@ h2 {
 
 .ai-row span {
   color: #64748b;
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .ai-row strong {
-  color: #111827;
-  font-size: 20px;
+  min-width: 0;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ai-row b {
   justify-self: end;
   color: #2563eb;
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .ai-status-block p {
-  padding: 10px 4px 0;
+  padding: 8px 2px 0;
   color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .compact-metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin: 12px 4px 0;
+  gap: 8px;
+  margin: 10px 2px 0;
 }
 
 .compact-metrics div {
@@ -1738,13 +1755,17 @@ h2 {
 
 .compact-metrics dt {
   color: #94a3b8;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .compact-metrics dd {
   margin: 4px 0 0;
+  overflow: hidden;
   color: #111827;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rail-object-panel {
@@ -1798,8 +1819,8 @@ h2 {
 
 .execution-path ol {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1808,12 +1829,12 @@ h2 {
 .execution-path li {
   position: relative;
   display: grid;
-  gap: 6px;
+  gap: 5px;
   justify-items: center;
-  min-height: 74px;
+  min-height: 58px;
   border: 1px solid #d8e5f2;
   border-radius: 8px;
-  padding: 9px 6px;
+  padding: 7px 5px;
   color: #64748b;
   background: #ffffff;
   text-align: center;
@@ -1823,18 +1844,24 @@ h2 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 999px;
   color: #64748b;
   background: #f1f5f9;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 820;
 }
 
 .execution-path li strong {
-  font-size: 12px;
-  line-height: 1.25;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .execution-path li.done {
@@ -1878,25 +1905,43 @@ h2 {
 }
 
 .command-guide {
+  position: relative;
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 8px;
   align-items: start;
+  border: 0;
+  border-radius: 0;
+  padding: 14px 0 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.command-guide::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.22) 50%, transparent);
+  content: "";
 }
 
 .command-tabs {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   padding: 0;
   background: transparent;
 }
 
 .command-tabs h2 {
-  writing-mode: vertical-rl;
+  writing-mode: horizontal-tb;
   justify-self: center;
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   color: #64748b;
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.1;
   letter-spacing: 0;
 }
 
@@ -1905,12 +1950,12 @@ h2 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid #d8e5f2;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
   color: #334155;
-  background: #ffffff;
+  background: transparent;
   cursor: pointer;
   font-weight: 800;
   transition:
@@ -1921,10 +1966,9 @@ h2 {
 }
 
 .command-tabs button:hover {
-  transform: translateY(-1px);
-  border-color: #bfdbfe;
+  transform: none;
   color: #2563eb;
-  background: #eff6ff;
+  background: rgba(239, 246, 255, 0.55);
 }
 
 .command-tabs button svg {
@@ -1945,10 +1989,20 @@ h2 {
 }
 
 .command-tabs button.active {
-  color: #ffffff;
-  border-color: #2563eb;
+  color: #1d4ed8;
+  background: transparent;
+  box-shadow: none;
+}
+
+.command-tabs button.active::before {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: -5px;
+  width: 3px;
+  border-radius: 999px;
   background: #2563eb;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+  content: "";
 }
 
 .command-feed {
@@ -1965,10 +2019,10 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 32px;
+  min-height: 28px;
   color: #64748b;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 760;
 }
 
 .feed-heading svg {
@@ -1978,10 +2032,10 @@ h2 {
 .command-feed button {
   position: relative;
   display: grid;
-  grid-template-columns: 22px 1fr 18px;
-  gap: 8px;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  gap: 7px;
   align-items: center;
-  min-height: 36px;
+  min-height: 34px;
   border: 0;
   padding: 0 2px;
   color: #111827;
@@ -2005,8 +2059,8 @@ h2 {
 }
 
 .command-feed button span {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border: 2px solid #cbd5e1;
   border-radius: 50%;
 }
@@ -2018,8 +2072,16 @@ h2 {
 
 .command-feed button strong {
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.command-feed button svg {
+  width: 15px;
+  height: 15px;
 }
 
 .history-strip {
@@ -2486,13 +2548,13 @@ h2 {
 }
 
 .command-guide {
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr);
 }
 
 .command-tabs button {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
 }
 
 .command-feed button {

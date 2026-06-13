@@ -1551,13 +1551,15 @@ const ObjectWorkbench = ({
       </div>
 
       <div className="pipeline object-pipeline" aria-label="语音执行链路">
-        <span>语音文本</span>
+        <span title="语音文本">语音</span>
         <ArrowRight size={16} />
-        <span className="active">{aiStatus.state === 'used' ? 'DeepSeek 兜底' : '本地规则解析'}</span>
+        <span className="active" title={aiStatus.state === 'used' ? 'DeepSeek 兜底' : '本地规则解析'}>
+          {aiStatus.state === 'used' ? 'AI' : '本地'}
+        </span>
         <ArrowRight size={16} />
-        <span>JSON schema 校验</span>
+        <span title="JSON schema 校验">校验</span>
         <ArrowRight size={16} />
-        <strong>SVG 画布渲染</strong>
+        <strong title="SVG 画布渲染">渲染</strong>
       </div>
 
       <div className="capability-toolbar" aria-label="支持的绘图能力">
@@ -1764,12 +1766,12 @@ const RailObjectInspector = ({
 
 const ExecutionPathBlock = ({ aiStatus, lastResult }: { aiStatus: AiResolutionStatus; lastResult: ExecutionResult | null }) => {
   const steps = [
-    { label: '语音文本', state: 'done' },
-    { label: '本地规则解析', state: 'done' },
-    { label: 'DeepSeek 兜底', state: aiStatus.state === 'used' ? 'done' : aiStatus.state === 'checking' ? 'active' : 'skip' },
-    { label: 'JSON schema 校验', state: lastResult ? 'done' : 'skip' },
-    { label: '白名单绘图命令', state: lastResult ? 'done' : 'skip' },
-    { label: 'SVG 画布渲染', state: lastResult?.ok ? 'done' : 'skip' }
+    { label: '语音', fullLabel: '语音文本', state: 'done' },
+    { label: '本地', fullLabel: '本地规则解析', state: 'done' },
+    { label: 'AI', fullLabel: 'DeepSeek 兜底', state: aiStatus.state === 'used' ? 'done' : aiStatus.state === 'checking' ? 'active' : 'skip' },
+    { label: 'Schema', fullLabel: 'JSON schema 校验', state: lastResult ? 'done' : 'skip' },
+    { label: '命令', fullLabel: '白名单绘图命令', state: lastResult ? 'done' : 'skip' },
+    { label: 'SVG', fullLabel: 'SVG 画布渲染', state: lastResult?.ok ? 'done' : 'skip' }
   ];
   return (
     <section className="execution-path" aria-label="指令执行链路">
@@ -1779,7 +1781,7 @@ const ExecutionPathBlock = ({ aiStatus, lastResult }: { aiStatus: AiResolutionSt
       </div>
       <ol>
         {steps.map((step, index) => (
-          <li key={step.label} className={step.state}>
+          <li key={step.fullLabel} className={step.state} title={step.fullLabel} aria-label={`${index + 1}. ${step.fullLabel}`}>
             <span>{index + 1}</span>
             <strong>{step.label}</strong>
           </li>
