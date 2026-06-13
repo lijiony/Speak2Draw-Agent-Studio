@@ -36,7 +36,9 @@ test('导航页两个入口按钮都可以进入语音绘图工作台', async ({
   await page.locator('.landing-ink-card').click();
   await expect(page.locator('.landing-info-panel')).toHaveClass(/is-open/);
   await expect(page.locator('.landing-info-panel article')).toHaveCount(4);
-  await expect(page.locator('.landing-shell button')).toHaveCount(2);
+  await page.getByRole('button', { name: '关闭产品信息面板' }).click();
+  await expect(page.locator('.landing-info-panel')).not.toHaveClass(/is-open/);
+  await expect(page.locator('.landing-nav button, .landing-primary-button')).toHaveCount(2);
 
   await page.getByRole('button', { name: '进入', exact: true }).click();
   await expect(page.getByRole('heading', { name: '纯语音绘图工作台' })).toBeVisible();

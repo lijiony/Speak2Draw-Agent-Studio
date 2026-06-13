@@ -642,6 +642,28 @@ export const App = () => {
 const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const title = Array.from('AI 语音绘图工具');
+  const infoColumns = [
+    {
+      icon: <Radio size={15} />,
+      title: '中文语音绘图',
+      detail: 'Natural language processing optimized for precise Chinese voice commands.'
+    },
+    {
+      icon: <BrainCircuit size={15} />,
+      title: 'AI 指令理解',
+      detail: 'Context-aware intent recognition bridging voice and visual output.'
+    },
+    {
+      icon: <CheckCircle2 size={15} />,
+      title: '安全绘图引擎',
+      detail: 'Local-first execution ensuring privacy and instant rendering speed.'
+    },
+    {
+      icon: <Sparkles size={15} />,
+      title: 'SVG 实时画布',
+      detail: 'Infinite resolution vector generation dynamically updated via voice.'
+    }
+  ];
 
   return (
     <main className={`landing-shell${previewOpen ? ' preview-open' : ''}`} aria-label="Speak2Draw 导航页">
@@ -677,16 +699,16 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
       </section>
 
       <section className={`landing-info-panel${previewOpen ? ' is-open' : ''}`} aria-label="产品信息面板">
-        {[
-          ['语音输入', '只用语音发起绘图、选择、修改与导出。'],
-          ['AI 理解', '把自然语言拆解成可执行绘图步骤。'],
-          ['画布执行', '使用 SVG 渲染对象、分组和局部编辑。'],
-          ['状态反馈', '展示识别、解析、执行和延迟状态。']
-        ].map(([titleText, detail], index) => (
-          <article key={titleText} style={{ '--info-index': index } as CSSProperties}>
-            <span>{String(index + 1).padStart(2, '0')}</span>
-            <strong>{titleText}</strong>
-            <p>{detail}</p>
+        <button className="landing-info-close" type="button" aria-label="关闭产品信息面板" onClick={() => setPreviewOpen(false)}>
+          <X size={17} />
+        </button>
+        {infoColumns.map((item, index) => (
+          <article key={item.title} style={{ '--info-index': index } as CSSProperties}>
+            <span className="landing-info-icon" aria-hidden="true">
+              {item.icon}
+            </span>
+            <strong>{item.title}</strong>
+            <p>{item.detail}</p>
           </article>
         ))}
       </section>
