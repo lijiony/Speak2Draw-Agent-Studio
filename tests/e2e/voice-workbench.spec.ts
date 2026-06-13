@@ -23,6 +23,26 @@ const openWorkbench = async (page: Page, query = 'e2e=1') => {
   return consoleErrors;
 };
 
+test('导航页两个入口按钮都可以进入语音绘图工作台', async ({ page }) => {
+  const consoleErrors = collectConsoleErrors(page);
+
+  await page.goto('/');
+  await expect(page.locator('main[aria-label="Speak2Draw 导航页"]')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'AI 语音绘图工具' })).toBeVisible();
+  await expect(page.locator('.landing-shell button')).toHaveCount(2);
+
+  await page.getByRole('button', { name: '进入', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '纯语音绘图工作台' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '启动语音监听' })).toBeVisible();
+
+  await page.goto('/');
+  await expect(page.locator('main[aria-label="Speak2Draw 导航页"]')).toBeVisible();
+  await page.locator('.landing-primary-button').click();
+  await expect(page.getByRole('heading', { name: '纯语音绘图工作台' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '启动语音监听' })).toBeVisible();
+  expect(consoleErrors).toEqual([]);
+});
+
 test('语音端点策略可以通过 URL 切换到耐心模式', async ({ page }) => {
   const consoleErrors = await openWorkbench(page, 'e2e=1&voicePolicy=patient');
 
