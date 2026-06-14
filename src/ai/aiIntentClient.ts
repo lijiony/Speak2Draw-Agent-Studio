@@ -1,6 +1,7 @@
 import type { DrawingIntent, SceneState, VoiceTranscript } from '../domain/types';
 import type { AiClarificationContext, AiIntentResponsePayload } from './aiIntentContract';
 import { normalizeAiIntent, toAiIntentRequestPayload } from './aiIntentContract';
+import { parseDeepSeekSvgArtworkContent, type AiSvgArtworkResponsePayload } from './svgArtworkContract';
 
 type PlanLike = {
   needsClarification?: boolean;
@@ -32,7 +33,7 @@ export const resolveAiIntent = async (
     const response = await fetcher('/api/ai/intent', {
       method: 'POST',
       headers: buildAiHeaders(options),
-      body: JSON.stringify(toAiIntentRequestPayload(transcript.text, scene, localReason, clarificationContext))
+      body: JSON.stringify(toAiIntentRequestPayload(transcript.text, scene, localReason, clarificationContext, 'editable-recipe'))
     });
 
     if (!response.ok) {
@@ -74,6 +75,64 @@ export const resolveAiIntent = async (
       ok: false,
       provider: 'deepseek',
       reason: 'AI 指令解析暂时不可用，已回退到本地规则。'
+    };
+  }
+};
+
+export const resolveAiSvgArtwork = async (
+  transcript: VoiceTranscript,
+  scene: SceneState,
+  localReason?: string,
+  clarificationContext?: AiClarificationContext,
+  options?: AiRequestOptions,
+  fetcher: FetchLike = fetch
+): Promise<AiSvgArtworkResponsePayload> => {
+  try {
+    const response = await fetcher('/api/ai/intent', {
+      method: 'POST',
+      headers: buildAiHeaders(options),
+      body: JSON.stringify(toAiIntentRequestPayload(transcript.text, scene, localReason, clarificationContext, 'safe-svg-artwork'))
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        provider: 'deepseek',
+        reason: `AI SVG 插画服务返回 ${response.status}`
+      };
+    }
+
+    const payload = (await response.json()) as AiSvgArtworkResponsePayload;
+    if (!payload.ok) {
+      return {
+        ok: false,
+        provider: payload.provider,
+        reason: sanitizeReason(payload.reason)
+      };
+    }
+
+    const artwork = parseDeepSeekSvgArtworkContent(JSON.stringify(payload.artwork));
+    if (!artwork) {
+      return {
+        ok: false,
+        provider: 'deepseek',
+        reason: 'AI SVG 插画未通过结构校验。'
+      };
+    }
+
+    return {
+      ok: true,
+      provider: 'deepseek',
+      model: payload.model,
+      artwork,
+      schemaVersion: payload.schemaVersion,
+      rawIntentSummary: payload.rawIntentSummary
+    };
+  } catch {
+    return {
+      ok: false,
+      provider: 'deepseek',
+      reason: 'AI SVG 插画暂时不可用，已回退到可编辑配方模式。'
     };
   }
 };

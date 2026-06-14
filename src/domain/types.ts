@@ -1,4 +1,5 @@
-export type ShapeKind = 'circle' | 'rectangle' | 'ellipse' | 'line' | 'triangle' | 'text';
+export type ShapeKind = 'circle' | 'rectangle' | 'ellipse' | 'line' | 'triangle' | 'text' | 'svg_artwork';
+export type PrimitiveShapeKind = Exclude<ShapeKind, 'svg_artwork'>;
 export type LayerDirection = 'front' | 'back' | 'forward' | 'backward';
 export type AlignmentMode = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom';
 export type DistributionAxis = 'horizontal' | 'vertical';
@@ -80,6 +81,28 @@ export interface SceneStyle {
   strokeWidth: number;
 }
 
+export interface SvgArtworkPart {
+  id: string;
+  partName: string;
+  role?: string;
+  editable: boolean;
+  bounds?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface SvgArtworkData {
+  name: string;
+  viewBox: string;
+  safeMarkup: string;
+  parts: SvgArtworkPart[];
+  qualityNotes?: string;
+  diagnostics: SvgArtworkDiagnostics;
+}
+
 export interface SceneObject {
   id: string;
   kind: ShapeKind;
@@ -94,11 +117,12 @@ export interface SceneObject {
   height: number;
   style: SceneStyle;
   text?: string;
+  svgArtwork?: SvgArtworkData;
   createdAt: number;
 }
 
 export interface DrawingRecipeItem {
-  shape: ShapeKind;
+  shape: PrimitiveShapeKind;
   name?: string;
   color?: string;
   strokeColor?: string;
@@ -118,7 +142,7 @@ export interface LayoutPartDiagnostics {
   index: number;
   name: string;
   partName?: string;
-  shape: ShapeKind;
+  shape: PrimitiveShapeKind;
   slot: RecipeSlot;
   relativeTo?: string;
   size: RecipeSize;
@@ -149,6 +173,24 @@ export interface LayoutDiagnostics {
   parts: LayoutPartDiagnostics[];
 }
 
+export interface SvgArtworkDiagnostics {
+  generationMode: 'safe-svg-artwork';
+  schemaVersion?: string;
+  rawSummary?: string;
+  transcript?: string;
+  name?: string;
+  viewBox?: string;
+  sanitizerStatus: 'accepted' | 'rejected' | 'fallback';
+  sanitizedElementCount: number;
+  droppedElementCount: number;
+  droppedAttributeCount: number;
+  partCount: number;
+  safeMarkupLength: number;
+  fallbackReason?: string;
+  qualityNotes?: string;
+  warnings: string[];
+}
+
 export type SceneSelection =
   | {
       scope: 'group';
@@ -159,6 +201,8 @@ export type SceneSelection =
       scope: 'part';
       objectId: string;
       groupId?: string;
+      partId?: string;
+      partName?: string;
     };
 
 export interface SceneSnapshot {
@@ -177,7 +221,7 @@ export interface DrawingIntent {
   type: DrawingIntentType;
   rawText: string;
   intents?: DrawingIntent[];
-  shape?: ShapeKind;
+  shape?: PrimitiveShapeKind;
   color?: string;
   name?: string;
   strokeColor?: string;
@@ -203,7 +247,7 @@ export interface ObjectSelector {
   scope?: SelectionScope;
   objectId?: string;
   groupId?: string;
-  shape?: ShapeKind;
+  shape?: PrimitiveShapeKind;
   color?: string;
   name?: string;
   names?: string[];
@@ -235,4 +279,5 @@ export interface ExecutionResult {
   needsClarification?: boolean;
   exportSvg?: string;
   layoutDiagnostics?: LayoutDiagnostics;
+  svgArtworkDiagnostics?: SvgArtworkDiagnostics;
 }

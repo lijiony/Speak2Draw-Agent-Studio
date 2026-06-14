@@ -6,7 +6,12 @@ export const executeDrawingCommands = (
   scene: SceneState,
   commands: DrawingCommand[],
   transcript: VoiceTranscript,
-  options?: { message?: string; needsClarification?: boolean; layoutDiagnostics?: ExecutionResult['layoutDiagnostics'] }
+  options?: {
+    message?: string;
+    needsClarification?: boolean;
+    layoutDiagnostics?: ExecutionResult['layoutDiagnostics'];
+    svgArtworkDiagnostics?: ExecutionResult['svgArtworkDiagnostics'];
+  }
 ): ExecutionResult => {
   if (options?.needsClarification) {
     return {
@@ -16,7 +21,8 @@ export const executeDrawingCommands = (
       commandsExecuted: 0,
       latencyMs: measureLatency(transcript),
       needsClarification: true,
-      layoutDiagnostics: options?.layoutDiagnostics
+      layoutDiagnostics: options?.layoutDiagnostics,
+      svgArtworkDiagnostics: options?.svgArtworkDiagnostics
     };
   }
 
@@ -27,7 +33,8 @@ export const executeDrawingCommands = (
       scene,
       commandsExecuted: 0,
       latencyMs: measureLatency(transcript),
-      layoutDiagnostics: options?.layoutDiagnostics
+      layoutDiagnostics: options?.layoutDiagnostics,
+      svgArtworkDiagnostics: options?.svgArtworkDiagnostics
     };
   }
 
@@ -43,7 +50,8 @@ export const executeDrawingCommands = (
     commandsExecuted: commands.length,
     latencyMs: measureLatency(transcript),
     exportSvg: hasExport ? serializeSceneToSvg(nextScene) : undefined,
-    layoutDiagnostics: options?.layoutDiagnostics
+    layoutDiagnostics: options?.layoutDiagnostics,
+    svgArtworkDiagnostics: options?.svgArtworkDiagnostics
   };
 };
 

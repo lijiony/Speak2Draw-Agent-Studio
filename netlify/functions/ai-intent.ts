@@ -1,4 +1,4 @@
-import { isAiIntentPayload, resolveDeepSeekIntent, type DeepSeekIntentProxyEnv } from '../../src/ai/deepSeekIntentProxy';
+import { isAiIntentPayload, resolveDeepSeekIntent, resolveDeepSeekSvgArtwork, type DeepSeekIntentProxyEnv } from '../../src/ai/deepSeekIntentProxy';
 
 declare const Netlify: {
   env: {
@@ -17,7 +17,8 @@ export default async (request: Request) => {
       return json({ ok: false, provider: 'deepseek', reason: 'AI 请求内容无效。' }, 400);
     }
 
-    return json(await resolveDeepSeekIntent(payload, readDeepSeekEnv(request)));
+    const env = readDeepSeekEnv(request);
+    return json(payload.generationMode === 'safe-svg-artwork' ? await resolveDeepSeekSvgArtwork(payload, env) : await resolveDeepSeekIntent(payload, env));
   } catch {
     return json({ ok: false, provider: 'deepseek', reason: 'AI 指令解析请求失败。' });
   }

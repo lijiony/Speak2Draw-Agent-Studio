@@ -1,6 +1,6 @@
 import { applyCommands, CANVAS_HEIGHT, CANVAS_WIDTH, createSceneObject, findObject, findObjects } from './sceneModel';
 import { layoutAssetRecipe } from './assetRecipeLayout';
-import type { DrawingCommand, DrawingIntent, LayoutDiagnostics, SceneObject, SceneState, ShapeKind } from './types';
+import type { DrawingCommand, DrawingIntent, LayoutDiagnostics, PrimitiveShapeKind, SceneObject, SceneState, SvgArtworkDiagnostics } from './types';
 import { normalizeVoiceText } from './voiceText';
 import { detectColor, detectShape } from './intentParser';
 
@@ -10,7 +10,13 @@ export const resetCommandIdsForTest = () => {
   nextId = 1;
 };
 
-export type DrawingCommandPlan = { commands: DrawingCommand[]; message?: string; needsClarification?: boolean; layoutDiagnostics?: LayoutDiagnostics };
+export type DrawingCommandPlan = {
+  commands: DrawingCommand[];
+  message?: string;
+  needsClarification?: boolean;
+  layoutDiagnostics?: LayoutDiagnostics;
+  svgArtworkDiagnostics?: SvgArtworkDiagnostics;
+};
 
 export const planCommands = (intent: DrawingIntent, scene: SceneState): DrawingCommandPlan => {
   switch (intent.type) {
@@ -90,8 +96,8 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): DrawingC
       const relatedObjects = target.groupId ? scene.objects.filter((object) => object.groupId === target.groupId) : [target];
       const copyName = duplicateLabel(target.groupName ?? target.name);
       const newGroupId = relatedObjects.length > 1 ? createGroupId() : undefined;
-      const commands = relatedObjects.map((object) =>
-        objectCommand(object.kind, {
+      const commands = relatedObjects.map((object) => {
+        const commonOptions = {
           name: duplicateLabel(object.name),
           groupId: newGroupId,
           groupName: copyName,
@@ -103,8 +109,18 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): DrawingC
           stroke: object.style.stroke,
           strokeWidth: object.style.strokeWidth,
           text: object.text
-        })
-      );
+        };
+        return object.kind === 'svg_artwork'
+          ? {
+              type: 'create_object' as const,
+              object: createSceneObject('svg_artwork', {
+                id: createId(),
+                ...commonOptions,
+                svgArtwork: object.svgArtwork
+              })
+            }
+          : objectCommand(object.kind, commonOptions);
+      });
       commands.push({ type: 'select_object', selector: { mode: 'by_name', name: copyName } });
       return {
         commands,
@@ -201,7 +217,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): DrawingC
     case 'delete_object': {
       const target = findObject(scene.objects, intent.selector, scene.selectedId, scene.selection);
       if (!target) return noTarget();
-      const targetLabel = target.partName ?? target.groupName ?? target.name;
+      const targetLabel = intent.selector?.scope === 'part' && intent.selector.name ? intent.selector.name : target.partName ?? target.groupName ?? target.name;
       return {
         commands: [{ type: 'delete_object', selector: intent.selector }],
         message: `已删除${targetLabel}。`
@@ -220,7 +236,7 @@ export const planCommands = (intent: DrawingIntent, scene: SceneState): DrawingC
   }
 };
 
-const createCommand = (shape: ShapeKind, intent: DrawingIntent): DrawingCommand => ({
+const createCommand = (shape: PrimitiveShapeKind, intent: DrawingIntent): DrawingCommand => ({
   type: 'create_object',
   object: createSceneObject(shape, {
     id: createId(),
@@ -358,7 +374,7 @@ const planSequenceCommands = (
 };
 
 const objectCommand = (
-  shape: ShapeKind,
+  shape: PrimitiveShapeKind,
   options: Omit<Parameters<typeof createSceneObject>[1], 'id'>
 ): DrawingCommand => ({
   type: 'create_object',
@@ -371,7 +387,7 @@ const createGenericShapeCommands = (text: string): DrawingCommand[] => {
       segment,
       shape: detectShape(segment)
     }))
-    .filter((item): item is { segment: string; shape: ShapeKind } => Boolean(item.shape));
+    .filter((item): item is { segment: string; shape: PrimitiveShapeKind } => Boolean(item.shape));
 
   return items.map((item, index) => {
     const position = genericShapePosition(index, items.length, item.shape);
@@ -394,7 +410,7 @@ const splitShapeItems = (text: string) =>
     .map((segment) => segment.trim())
     .filter(Boolean);
 
-const genericShapePosition = (index: number, total: number, shape: ShapeKind) => {
+const genericShapePosition = (index: number, total: number, shape: PrimitiveShapeKind) => {
   const spacing = 190;
   const size = shape === 'line' ? { width: 180, height: 8 } : shape === 'triangle' ? { width: 150, height: 130 } : { width: 140, height: 100 };
   const startX = CANVAS_WIDTH / 2 - ((total - 1) * spacing) / 2 - size.width / 2;
@@ -404,8 +420,8 @@ const genericShapePosition = (index: number, total: number, shape: ShapeKind) =>
   };
 };
 
-const shapeLabel = (shape: ShapeKind) => {
-  const labels: Record<ShapeKind, string> = {
+const shapeLabel = (shape: PrimitiveShapeKind) => {
+  const labels: Record<PrimitiveShapeKind, string> = {
     circle: '圆形',
     rectangle: '矩形',
     ellipse: '椭圆',
@@ -462,6 +478,9 @@ const describeScene = (scene: SceneState) => {
 const describeSelection = (scene: SceneState) => {
   const selected = scene.selectedId ? scene.objects.find((object) => object.id === scene.selectedId) : null;
   if (!selected) return '当前没有明确选中图形。可以说“选择最后一个图形”。';
+  if (scene.selection?.scope === 'part' && selected.kind === 'svg_artwork') {
+    return `当前选中：${selected.svgArtwork?.name ?? selected.name}里的${scene.selection.partName ?? '局部'}。这是一张安全 SVG 插画，支持整体移动和可定位局部编辑。`;
+  }
   if (selected.groupId) {
     const groupObjects = scene.objects.filter((object) => object.groupId === selected.groupId);
     return `当前选中：${selected.groupName ?? selected.name}素材组，包含 ${groupObjects.length} 个部件。位置 ${Math.round(selected.x)}、${Math.round(selected.y)}。`;

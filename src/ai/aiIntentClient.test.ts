@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveAiIntent, shouldUseAiIntentFallback } from './aiIntentClient';
+import { resolveAiIntent, resolveAiSvgArtwork, shouldUseAiIntentFallback } from './aiIntentClient';
 import { createEmptyScene } from '../domain/sceneModel';
 import type { DrawingIntent, VoiceTranscript } from '../domain/types';
 
@@ -166,5 +166,43 @@ describe('aiIntentClient', () => {
       'X-Speak2Draw-Session-Key': 'session-secret',
       'X-Speak2Draw-Model': 'deepseek-v4-pro'
     });
+  });
+
+  it('请求安全 SVG 插画时使用独立生图模式并校验包裹格式', async () => {
+    let submittedBody = '';
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      submittedBody = init?.body as string;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          provider: 'deepseek',
+          model: 'deepseek-v4-flash',
+          schemaVersion: 'svg-artwork-1.0',
+          rawIntentSummary: 'svg_artwork:戴帽子的小猫, parts 2',
+          artwork: {
+            schemaVersion: 'svg-artwork-1.0',
+            name: '戴帽子的小猫',
+            viewBox: '0 0 960 600',
+            svg: '<svg viewBox="0 0 960 600"><g id="cat-hat" data-part-name="帽子"><rect x="420" y="120" width="120" height="70" fill="#2563eb"/></g></svg>',
+            parts: [{ id: 'cat-hat', partName: '帽子', role: 'accessory', editable: true }],
+            qualityNotes: '主体居中。'
+          }
+        }),
+        { status: 200 }
+      );
+    });
+
+    const result = await resolveAiSvgArtwork(transcript('画一只戴帽子的猫'), createEmptyScene(), '本地无法表达', undefined, undefined, fetcher as unknown as typeof fetch);
+    const requestBody = JSON.parse(submittedBody) as { generationMode?: string; transcript: string };
+
+    expect(requestBody).toMatchObject({
+      generationMode: 'safe-svg-artwork',
+      transcript: '画一只戴帽子的猫'
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.artwork.name).toBe('戴帽子的小猫');
+      expect(result.artwork.parts[0]).toMatchObject({ id: 'cat-hat', partName: '帽子' });
+    }
   });
 });

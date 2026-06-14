@@ -7,7 +7,7 @@ import type {
   RecipeSlot,
   SceneObject,
   SceneState,
-  ShapeKind
+  PrimitiveShapeKind
 } from './types';
 
 type Bounds = LayoutDiagnostics['bounds'];
@@ -52,7 +52,7 @@ const SLOTS: Record<RecipeSlot, { x: number; y: number }> = {
   'bottom-right': { x: 0.76, y: 0.76 }
 };
 
-const SIZE_PRESETS: Record<ShapeKind, Record<RecipeSize, { width: number; height: number }>> = {
+const SIZE_PRESETS: Record<PrimitiveShapeKind, Record<RecipeSize, { width: number; height: number }>> = {
   circle: {
     tiny: { width: 24, height: 24 },
     small: { width: 48, height: 48 },

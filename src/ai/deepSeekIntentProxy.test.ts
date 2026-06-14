@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { isAiIntentPayload, resolveDeepSeekIntent } from './deepSeekIntentProxy';
+import { isAiIntentPayload, resolveDeepSeekIntent, resolveDeepSeekSvgArtwork } from './deepSeekIntentProxy';
 import type { AiIntentRequestPayload } from './aiIntentContract';
 
 const payload: AiIntentRequestPayload = {
@@ -87,6 +87,49 @@ describe('deepSeekIntentProxy', () => {
     const result = await resolveDeepSeekIntent(payload, { DEEPSEEK_API_KEY: 'test-key' }, fetchMock as unknown as typeof fetch);
 
     expect(result).toEqual({ ok: false, provider: 'deepseek', reason: 'DeepSeek 返回内容未通过安全校验。' });
+  });
+
+  it('安全 SVG 插画模式调用独立提示词并解析 artwork 合同', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as { messages: Array<{ content: string }> };
+      expect(body.messages[0].content).toContain('安全 SVG 插画设计器');
+      expect(body.messages[0].content).toContain('禁止使用 script');
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  schemaVersion: 'svg-artwork-1.0',
+                  name: '戴帽子的小猫',
+                  viewBox: '0 0 960 600',
+                  svg: '<svg viewBox="0 0 960 600"><g id="cat-hat" data-part-name="帽子"><rect x="420" y="120" width="120" height="70" fill="#2563eb"/></g></svg>',
+                  parts: [{ id: 'cat-hat', partName: '帽子', role: 'accessory', editable: true }],
+                  qualityNotes: '主体居中。'
+                })
+              }
+            }
+          ]
+        }),
+        { status: 200 }
+      );
+    });
+
+    const result = await resolveDeepSeekSvgArtwork(
+      { ...payload, generationMode: 'safe-svg-artwork', transcript: '画一只戴帽子的猫' },
+      { DEEPSEEK_API_KEY: 'test-key' },
+      fetchMock as unknown as typeof fetch
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      provider: 'deepseek',
+      artwork: {
+        schemaVersion: 'svg-artwork-1.0',
+        name: '戴帽子的小猫',
+        parts: [{ id: 'cat-hat', partName: '帽子' }]
+      }
+    });
   });
 
   it('校验代理请求载荷结构', () => {

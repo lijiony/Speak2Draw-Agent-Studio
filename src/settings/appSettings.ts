@@ -1,10 +1,12 @@
 import type { EndpointPolicyMode } from '../voice/endpointPolicy';
 
 export type AiModelName = 'deepseek-v4-flash' | 'deepseek-v4-pro';
+export type AiGenerationMode = 'editable-recipe' | 'safe-svg-artwork';
 
 export interface AppSettings {
   aiBaseUrl: string;
   aiModel: AiModelName;
+  aiGenerationMode: AiGenerationMode;
   aiTimeoutMs: number;
   voicePolicyMode: EndpointPolicyMode;
   voiceLanguage: 'zh-CN';
@@ -19,6 +21,7 @@ export interface PublicSettingsSnapshot extends AppSettings {
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   aiBaseUrl: 'https://api.deepseek.com',
   aiModel: 'deepseek-v4-flash',
+  aiGenerationMode: 'editable-recipe',
   aiTimeoutMs: 15000,
   voicePolicyMode: 'balanced',
   voiceLanguage: 'zh-CN',
@@ -57,6 +60,10 @@ export const resetAppSettings = () => {
 export const sanitizeSettings = (value: Partial<AppSettings>): AppSettings => ({
   aiBaseUrl: value.aiBaseUrl === 'https://api.deepseek.com' ? value.aiBaseUrl : DEFAULT_APP_SETTINGS.aiBaseUrl,
   aiModel: value.aiModel === 'deepseek-v4-pro' || value.aiModel === 'deepseek-v4-flash' ? value.aiModel : DEFAULT_APP_SETTINGS.aiModel,
+  aiGenerationMode:
+    value.aiGenerationMode === 'safe-svg-artwork' || value.aiGenerationMode === 'editable-recipe'
+      ? value.aiGenerationMode
+      : DEFAULT_APP_SETTINGS.aiGenerationMode,
   aiTimeoutMs: clampNumber(value.aiTimeoutMs ?? DEFAULT_APP_SETTINGS.aiTimeoutMs, 1500, 15000),
   voicePolicyMode: isPolicyMode(value.voicePolicyMode) ? value.voicePolicyMode : DEFAULT_APP_SETTINGS.voicePolicyMode,
   voiceLanguage: 'zh-CN',

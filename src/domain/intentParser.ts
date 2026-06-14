@@ -1,4 +1,4 @@
-import type { DrawingIntent, ObjectSelector, ShapeKind, VoiceTranscript } from './types';
+import type { DrawingIntent, ObjectSelector, PrimitiveShapeKind, VoiceTranscript } from './types';
 import { includesAny, normalizeVoiceText } from './voiceText';
 
 const COLORS: Record<string, string> = {
@@ -24,7 +24,7 @@ const COLORS: Record<string, string> = {
   粉色: '#ec4899'
 };
 
-const SHAPES: Array<[string, ShapeKind]> = [
+const SHAPES: Array<[string, PrimitiveShapeKind]> = [
   ['三角形', 'triangle'],
   ['矩形', 'rectangle'],
   ['长方形', 'rectangle'],

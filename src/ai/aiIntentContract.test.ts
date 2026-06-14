@@ -83,6 +83,48 @@ describe('aiIntentContract', () => {
     });
   });
 
+  it('把安全 SVG 插画的可编辑局部写入 AI 场景摘要', () => {
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('svg_artwork', {
+        id: 'svg-cat',
+        name: '戴帽子的小猫',
+        groupId: 'asset-svg-cat',
+        groupName: '戴帽子的小猫',
+        x: 96,
+        y: 48,
+        width: 768,
+        height: 504,
+        svgArtwork: {
+          name: '戴帽子的小猫',
+          viewBox: '0 0 960 600',
+          safeMarkup: '<g id="cat-hat" data-part-name="帽子"><rect x="420" y="120" width="120" height="70" fill="#2563eb"/></g>',
+          parts: [{ id: 'cat-hat', partName: '帽子', role: 'accessory', editable: true, bounds: { x: 420, y: 120, width: 120, height: 70 } }],
+          diagnostics: {
+            generationMode: 'safe-svg-artwork',
+            sanitizerStatus: 'accepted',
+            sanitizedElementCount: 2,
+            droppedElementCount: 0,
+            droppedAttributeCount: 0,
+            partCount: 1,
+            safeMarkupLength: 120,
+            warnings: []
+          }
+        }
+      })
+    });
+
+    const payload = toAiIntentRequestPayload('把帽子删掉', scene, '测试', undefined, 'safe-svg-artwork');
+
+    expect(payload.generationMode).toBe('safe-svg-artwork');
+    expect(payload.scene.assets[0]).toMatchObject({
+      groupId: 'asset-svg-cat',
+      groupName: '戴帽子的小猫',
+      parts: [{ objectId: 'svg-cat', partId: 'cat-hat', partName: '帽子', kind: 'svg_artwork' }]
+    });
+    expect(payload.scene.assets[0].parts[0].bounds.x).toBeGreaterThan(400);
+  });
+
   it('兼容旧版 schema 包裹格式', () => {
     const intent = parseDeepSeekIntentContent(
       JSON.stringify({

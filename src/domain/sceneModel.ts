@@ -9,6 +9,7 @@ import type {
   SceneState,
   ShapeKind
 } from './types';
+import { recolorSvgArtworkPart, removeSvgArtworkPart } from './svgArtworkSanitizer';
 
 export const CANVAS_WIDTH = 960;
 export const CANVAS_HEIGHT = 600;
@@ -61,6 +62,7 @@ export const createSceneObject = (
     groupName?: string;
     partId?: string;
     partName?: string;
+    svgArtwork?: SceneObject['svgArtwork'];
   }
 ): SceneObject => ({
   id: options.id,
@@ -75,6 +77,7 @@ export const createSceneObject = (
   width: options.width ?? defaultSize(kind).width,
   height: options.height ?? defaultSize(kind).height,
   text: options.text,
+  svgArtwork: options.svgArtwork,
   createdAt: Date.now(),
   style: {
     fill: options.fill ?? (kind === 'line' ? 'none' : '#f9fafb'),
@@ -108,14 +111,11 @@ const applyCommandInternal = (scene: SceneState, command: DrawingCommand, record
     case 'update_object': {
       const target = resolveTarget(scene, command.selector ?? { mode: 'selected' }, 'group');
       if (!target || !command.updates) return scene;
+      const updates = command.updates;
       const targetIds = new Set(target.objects.map((object) => object.id));
       const objects = scene.objects.map((object) =>
         targetIds.has(object.id)
-          ? {
-              ...object,
-              ...command.updates,
-              style: command.updates?.style ? { ...object.style, ...command.updates.style } : object.style
-            }
+          ? updateSceneObject(object, updates, command.selector, target.selection)
           : object
       );
       return applySnapshot(scene, { objects, selectedId: target.selected.id, selection: target.selection, revision: scene.revision + 1 }, recordHistory);
@@ -200,6 +200,23 @@ const applyCommandInternal = (scene: SceneState, command: DrawingCommand, record
     case 'delete_object': {
       const target = resolveTarget(scene, command.selector ?? { mode: 'selected' }, 'group');
       if (!target) return scene;
+      if (target.selected.kind === 'svg_artwork' && target.selection.scope === 'part' && target.selected.svgArtwork) {
+        const nextArtwork = removeSvgArtworkPart(target.selected.svgArtwork, target.selection.partId ?? target.selection.partName ?? '');
+        if (nextArtwork === target.selected.svgArtwork) return scene;
+        const objects = scene.objects.map((object) =>
+          object.id === target.selected.id ? { ...object, svgArtwork: nextArtwork } : object
+        );
+        return applySnapshot(
+          scene,
+          {
+            objects,
+            selectedId: target.selected.id,
+            selection: { scope: 'group', groupId: target.selected.groupId ?? target.selected.id, anchorObjectId: target.selected.id },
+            revision: scene.revision + 1
+          },
+          recordHistory
+        );
+      }
       const targetIds = new Set(target.objects.map((object) => object.id));
       const objects = scene.objects.filter((object) => !targetIds.has(object.id));
       return applySnapshot(scene, { objects, selectedId: null, selection: null, revision: scene.revision + 1 }, recordHistory);
@@ -318,10 +335,28 @@ const resolveTargetFromObjects = (
     return target ? resolveObjectTarget(objects, target, 'group') : undefined;
   }
   if (selector.mode === 'by_part_name') {
+    const artworkTarget = findArtworkPartTarget(objects, selector.name ?? '', selector.withinGroupName);
+    if (artworkTarget) {
+      return {
+        selected: artworkTarget.object,
+        objects: [artworkTarget.object],
+        selection: {
+          scope: 'part',
+          objectId: artworkTarget.object.id,
+          groupId: artworkTarget.object.groupId,
+          partId: artworkTarget.part.id,
+          partName: artworkTarget.part.partName
+        }
+      };
+    }
     const target = findPartByName(objects, selector.name ?? '', selector.withinGroupName);
     return target ? resolveObjectTarget(objects, target, 'part') : undefined;
   }
   if (selector.mode === 'by_name') {
+    const artworkTarget = findArtworkPartTarget(objects, selector.name ?? '');
+    if ((selector.scope === 'part' || hasPartSignal(selector.name ?? '')) && artworkTarget) {
+      return resolveArtworkPartTarget(artworkTarget.object, artworkTarget.part);
+    }
     const named = resolveNamedTarget(objects, selector.name ?? '', selector.scope);
     if (!named) return undefined;
     return resolveObjectTarget(objects, named.object, named.scope);
@@ -346,6 +381,7 @@ const resolveSelection = (objects: SceneObject[], selection: SceneSelection | nu
 
   const selected = objects.find((object) => object.id === selection.objectId);
   if (!selected) return undefined;
+  if (selected.kind === 'svg_artwork' && selection.partId) return { selected, objects: [selected], selection };
   const partObjects = selected.partId ? objects.filter((object) => object.partId === selected.partId) : [selected];
   return { selected, objects: partObjects, selection };
 };
@@ -374,6 +410,15 @@ const resolveObjectTarget = (
     };
   }
 
+  if (requestedScope === 'part' && object.kind === 'svg_artwork') {
+    const part = object.svgArtwork?.parts[0];
+    return {
+      selected: object,
+      objects: [object],
+      selection: { scope: 'part', objectId: object.id, groupId: object.groupId, partId: part?.id, partName: part?.partName }
+    };
+  }
+
   return {
     selected: object,
     objects: [object],
@@ -384,7 +429,9 @@ const resolveObjectTarget = (
 const selectionForObject = (object: SceneObject, requestedScope: 'group' | 'part'): SceneSelection =>
   requestedScope === 'group' && object.groupId
     ? { scope: 'group', groupId: object.groupId, anchorObjectId: object.id }
-    : { scope: 'part', objectId: object.id, groupId: object.groupId };
+    : object.kind === 'svg_artwork'
+      ? { scope: 'group', groupId: object.groupId ?? object.id, anchorObjectId: object.id }
+      : { scope: 'part', objectId: object.id, groupId: object.groupId };
 
 const resolveNamedTarget = (
   objects: SceneObject[],
@@ -394,7 +441,7 @@ const resolveNamedTarget = (
   const query = name.trim();
   if (!query) return undefined;
 
-  const exactPart = [...objects].reverse().find((object) => object.name === query || object.partName === query);
+  const exactPart = [...objects].reverse().find((object) => object.name === query || object.partName === query || object.svgArtwork?.parts.some((part) => nameMatches(part.partName, query)));
   const exactGroup = [...objects].reverse().find((object) => object.groupName === query);
   const part = findPartByName(objects, query);
   const group = [...objects].reverse().find((object) => nameMatches(object.groupName, query));
@@ -418,8 +465,30 @@ const findPartByName = (objects: SceneObject[], name: string, withinGroupName?: 
     .reverse()
     .find((object) => {
       const groupMatches = !withinGroupName || nameMatches(object.groupName, withinGroupName);
-      return groupMatches && (nameMatches(object.name, name) || nameMatches(object.partName, name));
+      return groupMatches && (nameMatches(object.name, name) || nameMatches(object.partName, name) || object.svgArtwork?.parts.some((part) => nameMatches(part.partName, name)));
     });
+
+const findArtworkPartTarget = (objects: SceneObject[], name: string, withinGroupName?: string) => {
+  for (const object of [...objects].reverse()) {
+    if (object.kind !== 'svg_artwork' || !object.svgArtwork) continue;
+    if (withinGroupName && !nameMatches(object.groupName ?? object.name, withinGroupName)) continue;
+    const part = object.svgArtwork.parts.find((part) => nameMatches(part.partName, name));
+    if (part) return { object, part };
+  }
+  return undefined;
+};
+
+const resolveArtworkPartTarget = (object: SceneObject, part: NonNullable<SceneObject['svgArtwork']>['parts'][number]): ResolvedTarget => ({
+  selected: object,
+  objects: [object],
+  selection: {
+    scope: 'part',
+    objectId: object.id,
+    groupId: object.groupId,
+    partId: part.id,
+    partName: part.partName
+  }
+});
 
 const undo = (scene: SceneState): SceneState => {
   const previous = lastItem(scene.past);
@@ -438,6 +507,27 @@ const redo = (scene: SceneState): SceneState => {
     ...next,
     past: [...scene.past, snapshot(scene)],
     future: scene.future.slice(1)
+  };
+};
+
+const updateSceneObject = (
+  object: SceneObject,
+  updates: NonNullable<DrawingCommand['updates']>,
+  selector: DrawingCommand['selector'],
+  selection: SceneSelection
+): SceneObject => {
+  if (object.kind === 'svg_artwork' && object.svgArtwork && selection.scope === 'part' && updates.style?.fill) {
+    return {
+      ...object,
+      svgArtwork: recolorSvgArtworkPart(object.svgArtwork, selection.partId ?? selection.partName ?? selector?.name ?? '', updates.style.fill),
+      style: updates.style ? { ...object.style, ...updates.style } : object.style
+    };
+  }
+
+  return {
+    ...object,
+    ...updates,
+    style: updates.style ? { ...object.style, ...updates.style } : object.style
   };
 };
 
@@ -601,6 +691,7 @@ const distributeObjects = (objects: SceneObject[], axis: DistributionAxis): Scen
 };
 
 const defaultSize = (kind: ShapeKind) => {
+  if (kind === 'svg_artwork') return { width: CANVAS_WIDTH - 192, height: CANVAS_HEIGHT - 96 };
   if (kind === 'line') return { width: 180, height: 8 };
   if (kind === 'text') return { width: 220, height: 64 };
   if (kind === 'triangle') return { width: 150, height: 130 };
@@ -634,7 +725,8 @@ const shapeName = (kind: ShapeKind) => {
     ellipse: '椭圆',
     line: '线条',
     triangle: '三角形',
-    text: '文字'
+    text: '文字',
+    svg_artwork: 'AI SVG 插画'
   };
   return names[kind];
 };

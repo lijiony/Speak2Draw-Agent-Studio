@@ -6,6 +6,7 @@ import type {
   DrawingRecipeItem,
   LayerDirection,
   ObjectSelector,
+  PrimitiveShapeKind,
   RecipeSize,
   RecipeSlot,
   SceneState,
@@ -14,6 +15,7 @@ import type {
 
 export interface AiIntentRequestPayload {
   transcript: string;
+  generationMode?: 'editable-recipe' | 'safe-svg-artwork';
   scene: {
     revision: number;
     objects: Array<{
@@ -127,7 +129,7 @@ const INTENT_TYPES: DrawingIntentType[] = [
   'unknown'
 ];
 
-const SHAPES: ShapeKind[] = ['circle', 'rectangle', 'ellipse', 'line', 'triangle', 'text'];
+const SHAPES: PrimitiveShapeKind[] = ['circle', 'rectangle', 'ellipse', 'line', 'triangle', 'text'];
 const RECIPE_SLOTS: RecipeSlot[] = ['center', 'top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const RECIPE_SIZES: RecipeSize[] = ['tiny', 'small', 'medium', 'large'];
 const DIRECTIONS: Array<NonNullable<DrawingIntent['direction']>> = ['left', 'right', 'up', 'down', 'center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
@@ -211,9 +213,11 @@ export const toAiIntentRequestPayload = (
   transcript: string,
   scene: SceneState,
   localReason?: string,
-  clarificationContext?: AiClarificationContext
+  clarificationContext?: AiClarificationContext,
+  generationMode: AiIntentRequestPayload['generationMode'] = 'editable-recipe'
 ): AiIntentRequestPayload => ({
   transcript,
+  generationMode,
   localReason,
   clarificationContext: clarificationContext
     ? {
@@ -319,7 +323,7 @@ const normalizeAiIntentValue = (value: unknown, rawText: string, depth: number):
   if (typeof value.scale === 'number') intent.scale = clampNumber(value.scale, 0.2, 4);
   if (typeof value.text === 'string') intent.text = value.text.slice(0, 80);
   if (value.operation === 'delete' || value.operation === 'replace') intent.operation = value.operation;
-  if (typeof value.shape === 'string' && SHAPES.includes(value.shape as ShapeKind)) intent.shape = value.shape as ShapeKind;
+  if (typeof value.shape === 'string' && SHAPES.includes(value.shape as PrimitiveShapeKind)) intent.shape = value.shape as PrimitiveShapeKind;
   if (typeof value.width === 'number') intent.width = clampNumber(value.width, 20, 420);
   if (typeof value.height === 'number') intent.height = clampNumber(value.height, 20, 320);
   if (typeof value.direction === 'string' && DIRECTIONS.includes(value.direction as NonNullable<DrawingIntent['direction']>)) {
@@ -392,9 +396,9 @@ const normalizeRecipe = (recipe: unknown): DrawingRecipeItem[] => {
   return recipe
     .slice(0, 16)
     .map((item) => {
-      if (!isRecord(item) || typeof item.shape !== 'string' || !SHAPES.includes(item.shape as ShapeKind)) return null;
+      if (!isRecord(item) || typeof item.shape !== 'string' || !SHAPES.includes(item.shape as PrimitiveShapeKind)) return null;
       const normalized: DrawingRecipeItem = {
-        shape: item.shape as ShapeKind
+        shape: item.shape as PrimitiveShapeKind
       };
       if (typeof item.name === 'string') normalized.name = item.name.trim().slice(0, 24);
       if (typeof item.partName === 'string') normalized.partName = item.partName.trim().slice(0, 24);
@@ -460,7 +464,7 @@ const normalizeSelector = (selector: unknown): ObjectSelector | undefined => {
   }
   if (selector.mode === 'by_shape_color') {
     const next: ObjectSelector = { mode: 'by_shape_color', ...(scope ? { scope } : {}) };
-    if (typeof selector.shape === 'string' && SHAPES.includes(selector.shape as ShapeKind)) next.shape = selector.shape as ShapeKind;
+    if (typeof selector.shape === 'string' && SHAPES.includes(selector.shape as PrimitiveShapeKind)) next.shape = selector.shape as PrimitiveShapeKind;
     if (typeof selector.color === 'string' && isHexColor(selector.color)) next.color = selector.color;
     return next.shape || next.color ? next : undefined;
   }
@@ -504,15 +508,29 @@ const buildAssetTree = (scene: SceneState): AiIntentRequestPayload['scene']['ass
     groupId,
     groupName: objects[0]?.groupName ?? '素材组',
     bounds: boundsForObjects(objects),
-    parts: objects.map((object) => ({
-      objectId: object.id,
-      name: object.name,
-      ...(object.partId ? { partId: object.partId } : {}),
-      ...(object.partName ? { partName: object.partName } : {}),
-      kind: object.kind,
-      fill: object.style.fill,
-      bounds: boundsForObjects([object])
-    }))
+    parts: objects.flatMap((object) =>
+      object.kind === 'svg_artwork' && object.svgArtwork
+        ? object.svgArtwork.parts.map((part) => ({
+            objectId: object.id,
+            name: part.partName,
+            partId: part.id,
+            partName: part.partName,
+            kind: object.kind,
+            fill: object.style.fill,
+            bounds: part.bounds ? artworkPartBounds(object, part.bounds) : boundsForObjects([object])
+          }))
+        : [
+            {
+              objectId: object.id,
+              name: object.name,
+              ...(object.partId ? { partId: object.partId } : {}),
+              ...(object.partName ? { partName: object.partName } : {}),
+              kind: object.kind,
+              fill: object.style.fill,
+              bounds: boundsForObjects([object])
+            }
+          ]
+    )
   }));
 };
 
@@ -538,12 +556,25 @@ const buildSelectionSummary = (scene: SceneState): AiIntentRequestPayload['scene
     ? {
         scope: 'part',
         id: selected.id,
-        name: selected.partName ?? selected.name,
+        name: selection.partName ?? selected.partName ?? selected.name,
         ...(selected.groupId ? { groupId: selected.groupId } : {}),
         ...(selected.groupName ? { groupName: selected.groupName } : {}),
-        ...(selected.partName ? { partName: selected.partName } : {})
+        ...(selection.partName ?? selected.partName ? { partName: selection.partName ?? selected.partName } : {})
       }
     : null;
+};
+
+const artworkPartBounds = (
+  object: SceneState['objects'][number],
+  bounds: NonNullable<NonNullable<SceneState['objects'][number]['svgArtwork']>['parts'][number]['bounds']>
+): Bounds => {
+  const [viewX, viewY, viewWidth, viewHeight] = parseViewBox(object.svgArtwork?.viewBox);
+  return {
+    x: Math.round(object.x + ((bounds.x - viewX) / viewWidth) * object.width),
+    y: Math.round(object.y + ((bounds.y - viewY) / viewHeight) * object.height),
+    width: Math.round((bounds.width / viewWidth) * object.width),
+    height: Math.round((bounds.height / viewHeight) * object.height)
+  };
 };
 
 const boundsForObjects = (objects: SceneState['objects']): Bounds => {
@@ -557,6 +588,11 @@ const boundsForObjects = (objects: SceneState['objects']): Bounds => {
     width: Math.round(maxX - minX),
     height: Math.round(maxY - minY)
   };
+};
+
+const parseViewBox = (viewBox?: string): [number, number, number, number] => {
+  const parts = viewBox?.trim().split(/\s+/).map(Number) ?? [];
+  return parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0 ? [parts[0], parts[1], parts[2], parts[3]] : [0, 0, 960, 600];
 };
 
 const parseJsonObject = (content: string) => {

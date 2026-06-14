@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { isAiIntentPayload, resolveDeepSeekIntent } from './src/ai/deepSeekIntentProxy';
+import { isAiIntentPayload, resolveDeepSeekIntent, resolveDeepSeekSvgArtwork } from './src/ai/deepSeekIntentProxy';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -27,7 +27,14 @@ const deepSeekIntentProxy = (env: Record<string, string>): Plugin => ({
           return;
         }
 
-        sendJson(response, 200, await resolveDeepSeekIntent(payload, readAiProxyEnv(env, bodyRequest.headers)));
+        const proxyEnv = readAiProxyEnv(env, bodyRequest.headers);
+        sendJson(
+          response,
+          200,
+          payload.generationMode === 'safe-svg-artwork'
+            ? await resolveDeepSeekSvgArtwork(payload, proxyEnv)
+            : await resolveDeepSeekIntent(payload, proxyEnv)
+        );
       } catch {
         sendJson(response, 200, { ok: false, provider: 'deepseek', reason: 'AI 指令解析请求失败。' });
       }

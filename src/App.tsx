@@ -22,6 +22,7 @@ import {
   Radio,
   Redo2,
   Settings,
+  ShieldCheck,
   Sparkles,
   Trash2,
   Undo2,
@@ -29,13 +30,14 @@ import {
   WandSparkles,
   X
 } from 'lucide-react';
-import { resolveAiIntent, shouldUseAiIntentFallback, type AiRequestOptions } from './ai/aiIntentClient';
+import { resolveAiIntent, resolveAiSvgArtwork, shouldUseAiIntentFallback, type AiRequestOptions } from './ai/aiIntentClient';
 import type { AiClarificationContext } from './ai/aiIntentContract';
 import { planCommands } from './domain/commandPlanner';
 import { executeDrawingCommands } from './domain/drawingExecutor';
 import { parseIntent } from './domain/intentParser';
-import { createEmptyScene, findObjects } from './domain/sceneModel';
-import type { DrawingCommand, DrawingIntent, DrawingRecipeItem, ExecutionResult, SceneObject, SceneState, VoiceTranscript } from './domain/types';
+import { createEmptyScene, createSceneObject, findObjects } from './domain/sceneModel';
+import { createSvgArtworkObjectBounds, sanitizeSvgArtwork } from './domain/svgArtworkSanitizer';
+import type { DrawingCommand, DrawingIntent, DrawingRecipeItem, ExecutionResult, SceneObject, SceneState, SvgArtworkData, SvgArtworkDiagnostics, VoiceTranscript } from './domain/types';
 import { runMicrophoneInputTest, type MicrophoneInputSample, type MicrophoneTestResult } from './voice/microphoneTest';
 import type { EndpointPolicyMode } from './voice/endpointPolicy';
 import { useSpeechInput, type SpeechDiagnostics } from './voice/useSpeechInput';
@@ -356,8 +358,16 @@ export const App = () => {
   const publishResult = useCallback(
     async (transcript: VoiceTranscript, result: ExecutionResult, source: string, eventTitle?: string) => {
       const resultForDisplay =
-        !result.layoutDiagnostics && result.commandsExecuted === 0 && lastResultRef.current?.layoutDiagnostics
-          ? { ...result, layoutDiagnostics: lastResultRef.current.layoutDiagnostics }
+        result.commandsExecuted === 0
+          ? {
+              ...result,
+              ...(!result.layoutDiagnostics && lastResultRef.current?.layoutDiagnostics
+                ? { layoutDiagnostics: lastResultRef.current.layoutDiagnostics }
+                : {}),
+              ...(!result.svgArtworkDiagnostics && lastResultRef.current?.svgArtworkDiagnostics
+                ? { svgArtworkDiagnostics: lastResultRef.current.svgArtworkDiagnostics }
+                : {})
+            }
           : result;
       setLastTranscript(transcript.text);
       setScene(result.scene);
@@ -480,6 +490,15 @@ export const App = () => {
           setActiveSettingsTab('ai');
           message = `已将 AI 模型切换为 ${settingsCommand.model}。`;
         }
+        if (settingsCommand.type === 'generation-mode') {
+          setSettings((current) => ({ ...current, aiGenerationMode: settingsCommand.mode }));
+          setSettingsOpen(true);
+          setActiveSettingsTab('ai');
+          message =
+            settingsCommand.mode === 'safe-svg-artwork'
+              ? '已切换到安全 SVG 插画模式。'
+              : '已切换到可编辑配方模式。';
+        }
         if (settingsCommand.type === 'voice-policy') {
           setVoicePolicyMode(settingsCommand.mode);
           setSettingsOpen(true);
@@ -531,42 +550,89 @@ export const App = () => {
       let executionScene = currentScene;
       let aiHistoryLabel = '本地规则';
       const creativeAiCandidate = isCreativeAiCandidate(transcript.text, localIntent.reason);
+      let svgArtworkFallbackDiagnostics: SvgArtworkDiagnostics | undefined;
 
       const aiFallbackEnabled = settingsRef.current.aiFallbackEnabled;
       if (aiFallbackEnabled && (activeClarification || shouldUseAiIntentFallback(localIntent, plan, transcript))) {
         pushWorkflowEvent('正在请求 AI', activeClarification ? '结合上一轮澄清继续解析。' : transcript.text, 'info');
         setAiStatus({
           state: 'checking',
-          message: activeClarification ? '正在结合上一轮澄清请求 DeepSeek。' : '正在请求 DeepSeek 解析这条语音。'
-        });
-        const aiResult = await resolveAiIntent(
-          transcript,
-          executionScene,
-          activeClarification ? activeClarification.question : plan.message ?? localIntent.reason,
-          activeClarification ?? undefined,
-          getAiRequestOptions()
-        );
-        if (aiResult.ok) {
-          const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
-          executionScene = latestScene;
-          plan = planCommands(aiResult.intent, latestScene);
-          if (plan.layoutDiagnostics) {
-            plan = {
-              ...plan,
-              layoutDiagnostics: {
-                ...plan.layoutDiagnostics,
-                schemaVersion: aiResult.schemaVersion ?? plan.layoutDiagnostics.schemaVersion,
-                rawSummary: aiResult.rawIntentSummary ?? plan.layoutDiagnostics.rawSummary,
-                transcript: transcript.text
-              }
-            };
-          }
-          aiHistoryLabel = 'DeepSeek';
-          setAiStatus({
-            state: 'used',
-            message: `DeepSeek 已解析为 ${aiResult.intent.type}。`
+            message: activeClarification ? '正在结合上一轮澄清请求 DeepSeek。' : '正在请求 DeepSeek 解析这条语音。'
           });
-        } else {
+        const aiReason = activeClarification ? activeClarification.question : plan.message ?? localIntent.reason;
+        const wantsSvgArtwork = settingsRef.current.aiGenerationMode === 'safe-svg-artwork' && creativeAiCandidate && !activeClarification;
+        let svgArtworkHandled = false;
+        if (wantsSvgArtwork) {
+          const svgResult = await resolveAiSvgArtwork(transcript, executionScene, aiReason, undefined, getAiRequestOptions());
+          if (svgResult.ok) {
+            const sanitizeResult = sanitizeSvgArtwork(svgResult.artwork, transcript.text);
+            if (sanitizeResult.ok && sanitizeResult.artwork) {
+              const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
+              executionScene = latestScene;
+              const artworkCommand = createSvgArtworkCommand(sanitizeResult.artwork, transcript.text);
+              plan = {
+                commands: [artworkCommand],
+                message: `已生成安全 SVG 插画：${sanitizeResult.artwork.name}。`,
+                svgArtworkDiagnostics: {
+                  ...sanitizeResult.diagnostics,
+                  rawSummary: svgResult.rawIntentSummary,
+                  schemaVersion: svgResult.schemaVersion,
+                  transcript: transcript.text
+                }
+              };
+              svgArtworkHandled = true;
+              aiHistoryLabel = 'DeepSeek SVG';
+              setAiStatus({
+                state: 'used',
+                message: `DeepSeek 已生成安全 SVG 插画。`
+              });
+              pushWorkflowEvent('SVG 插画校验通过', `${sanitizeResult.diagnostics.sanitizedElementCount} 个安全元素。`, 'ok');
+            } else {
+              svgArtworkFallbackDiagnostics = {
+                ...sanitizeResult.diagnostics,
+                sanitizerStatus: 'fallback',
+                fallbackReason: sanitizeResult.reason ?? sanitizeResult.diagnostics.fallbackReason ?? 'SVG 插画校验失败。'
+              };
+              pushWorkflowEvent('SVG 插画已回退', svgArtworkFallbackDiagnostics.fallbackReason ?? '安全校验未通过。', 'warning');
+            }
+          } else {
+            svgArtworkFallbackDiagnostics = createSvgFallbackDiagnostics(transcript.text, svgResult.reason);
+            pushWorkflowEvent('SVG 插画已回退', svgResult.reason, 'warning');
+          }
+        }
+
+        if (!svgArtworkHandled) {
+          const aiResult = await resolveAiIntent(
+            transcript,
+            executionScene,
+            aiReason,
+            activeClarification ?? undefined,
+            getAiRequestOptions()
+          );
+          if (aiResult.ok) {
+            const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
+            executionScene = latestScene;
+            plan = planCommands(aiResult.intent, latestScene);
+            if (plan.layoutDiagnostics) {
+              plan = {
+                ...plan,
+                layoutDiagnostics: {
+                  ...plan.layoutDiagnostics,
+                  schemaVersion: aiResult.schemaVersion ?? plan.layoutDiagnostics.schemaVersion,
+                  rawSummary: aiResult.rawIntentSummary ?? plan.layoutDiagnostics.rawSummary,
+                  transcript: transcript.text
+                },
+                svgArtworkDiagnostics: svgArtworkFallbackDiagnostics
+              };
+            } else if (svgArtworkFallbackDiagnostics) {
+              plan = { ...plan, svgArtworkDiagnostics: svgArtworkFallbackDiagnostics };
+            }
+            aiHistoryLabel = svgArtworkFallbackDiagnostics ? 'SVG 回退到 DeepSeek 配方' : 'DeepSeek';
+            setAiStatus({
+              state: 'used',
+              message: svgArtworkFallbackDiagnostics ? `SVG 插画校验失败，已使用可编辑配方模式。` : `DeepSeek 已解析为 ${aiResult.intent.type}。`
+            });
+          } else {
           aiHistoryLabel = '本地回退';
           setAiStatus({
             state: 'fallback',
@@ -586,8 +652,11 @@ export const App = () => {
                     schemaVersion: 'local',
                     rawSummary: `${localCreativeIntent.type}:${localCreativeIntent.name ?? '素材'}, recipe ${localCreativeIntent.recipe?.length ?? 0}`,
                     transcript: transcript.text
-                  }
+                  },
+                  svgArtworkDiagnostics: svgArtworkFallbackDiagnostics
                 };
+              } else if (svgArtworkFallbackDiagnostics) {
+                plan = { ...plan, svgArtworkDiagnostics: svgArtworkFallbackDiagnostics };
               }
               aiHistoryLabel = '本地素材配方';
               setAiStatus({
@@ -599,10 +668,12 @@ export const App = () => {
               plan = {
                 commands: [],
                 message: `AI 创作服务暂时不可用：${aiResult.reason}`,
-                needsClarification: true
+                needsClarification: true,
+                svgArtworkDiagnostics: svgArtworkFallbackDiagnostics
               };
             }
           }
+        }
         }
       } else {
         setAiStatus({
@@ -933,6 +1004,7 @@ export const App = () => {
             status={status}
             diagnostics={diagnostics}
             showInterimTranscript={settings.showInterimTranscript}
+            generationMode={settings.aiGenerationMode}
             aiStatus={aiStatus}
             selected={selected}
             selection={scene.selection}
@@ -1613,8 +1685,15 @@ const DrawingCanvas = ({ scene }: { scene: SceneState }) => {
   const selectedGroupObjects = scene.selection?.scope === 'group' ? scene.objects.filter((object) => object.groupId === scene.selection?.groupId) : [];
   const selectedGroupBounds = selectedGroupObjects.length ? getObjectBounds(selectedGroupObjects) : null;
   const selectedPartObjects =
-    scene.selection?.scope === 'part' && selectedObject?.partId ? scene.objects.filter((object) => object.partId === selectedObject.partId) : [];
-  const selectedPartBounds = selectedPartObjects.length > 1 ? getObjectBounds(selectedPartObjects) : null;
+    scene.selection?.scope === 'part' && selectedObject?.partId && selectedObject.kind !== 'svg_artwork'
+      ? scene.objects.filter((object) => object.partId === selectedObject.partId)
+      : [];
+  const selectedArtworkPartBounds =
+    scene.selection?.scope === 'part' && selectedObject?.kind === 'svg_artwork'
+      ? getSvgArtworkPartBounds(selectedObject, scene.selection.partId, scene.selection.partName)
+      : null;
+  const selectedPartBounds = selectedArtworkPartBounds ?? (selectedPartObjects.length > 1 ? getObjectBounds(selectedPartObjects) : null);
+  const selectedPartLabel = scene.selection?.scope === 'part' ? scene.selection.partName ?? selectedObject?.partName ?? selectedObject?.name ?? '局部' : '局部';
 
   return (
     <svg className="drawing-canvas" viewBox="0 0 960 600" role="img" aria-label="语音绘图画布">
@@ -1634,7 +1713,7 @@ const DrawingCanvas = ({ scene }: { scene: SceneState }) => {
         <SceneObjectView key={object.id} object={object} selected={!selectedGroupBounds && !selectedPartBounds && object.id === scene.selectedId} />
       ))}
       {selectedGroupBounds ? <GroupSelectionBox bounds={selectedGroupBounds} label={selectedObject?.groupName ?? selectedObject?.name ?? '素材组'} /> : null}
-      {selectedPartBounds ? <PartSelectionBox bounds={selectedPartBounds} label={selectedObject?.partName ?? selectedObject?.name ?? '局部'} /> : null}
+      {selectedPartBounds ? <PartSelectionBox bounds={selectedPartBounds} label={selectedPartLabel} /> : null}
     </svg>
   );
 };
@@ -1712,6 +1791,23 @@ const SceneObjectView = ({ object, selected }: { object: SceneObject; selected: 
         <text x={object.x} y={object.y + object.height / 2} fill={object.style.stroke} fontSize="44" fontFamily='"Segoe UI", "Microsoft YaHei", sans-serif'>
           {object.text ?? '文字'}
         </text>
+      </g>
+    );
+  }
+  if (object.kind === 'svg_artwork') {
+    return (
+      <g className="scene-object svg-artwork-object">
+        {selection}
+        <svg
+          x={object.x}
+          y={object.y}
+          width={object.width}
+          height={object.height}
+          viewBox={safeArtworkViewBox(object.svgArtwork?.viewBox)}
+          role="img"
+          aria-label={object.svgArtwork?.name ?? object.name}
+          dangerouslySetInnerHTML={{ __html: object.svgArtwork?.safeMarkup ?? '' }}
+        />
       </g>
     );
   }
@@ -1937,6 +2033,27 @@ const getObjectBounds = (objects: SceneObject[]) => {
   };
 };
 
+const getSvgArtworkPartBounds = (object: SceneObject, partId?: string, partName?: string) => {
+  const part = object.svgArtwork?.parts.find((item) => item.id === partId || item.partName === partName);
+  if (!part?.bounds) return { x: object.x, y: object.y, width: object.width, height: object.height };
+  const [viewX, viewY, viewWidth, viewHeight] = parseArtworkViewBox(object.svgArtwork?.viewBox);
+  const scaleX = object.width / viewWidth;
+  const scaleY = object.height / viewHeight;
+  return {
+    x: object.x + (part.bounds.x - viewX) * scaleX,
+    y: object.y + (part.bounds.y - viewY) * scaleY,
+    width: part.bounds.width * scaleX,
+    height: part.bounds.height * scaleY
+  };
+};
+
+const parseArtworkViewBox = (viewBox?: string): [number, number, number, number] => {
+  const parts = viewBox?.trim().split(/\s+/).map(Number) ?? [];
+  return parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0 ? [parts[0], parts[1], parts[2], parts[3]] : [0, 0, 960, 600];
+};
+
+const safeArtworkViewBox = (viewBox?: string) => parseArtworkViewBox(viewBox).join(' ');
+
 const summarizeFill = (objects: SceneObject[]) => {
   if (!objects.length) return { value: '无', swatch: undefined };
   const fills = [...new Set(objects.map((object) => object.style.fill))];
@@ -1973,6 +2090,7 @@ const StatusRail = ({
     <div className="soft-divider" />
     <ExecutionPathBlock aiStatus={aiStatus} lastResult={lastResult} />
     <AiLayoutDiagnosticsBlock diagnostics={lastResult?.layoutDiagnostics} />
+    <SvgArtworkDiagnosticsBlock diagnostics={lastResult?.svgArtworkDiagnostics} />
     <div className="soft-divider" />
     <ClarificationFlowBlock clarification={clarification} lastTranscript={lastTranscript} selected={selected} />
     <div className="soft-divider" />
@@ -2146,6 +2264,49 @@ const AiLayoutDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionResu
           </li>
         ))}
       </ol>
+      {diagnostics.warnings.length ? <p className="layout-warning">{diagnostics.warnings.slice(0, 2).join('；')}</p> : null}
+    </section>
+  );
+};
+
+const SvgArtworkDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionResult['svgArtworkDiagnostics'] }) => {
+  if (!diagnostics) return null;
+  const statusLabel =
+    diagnostics.sanitizerStatus === 'accepted'
+      ? '已通过'
+      : diagnostics.sanitizerStatus === 'fallback'
+        ? '已回退'
+        : '已拒绝';
+  return (
+    <section className={`ai-layout-diagnostics svg-artwork-diagnostics ${diagnostics.sanitizerStatus}`} aria-label="SVG 插画安全校验">
+      <div className="section-label">
+        <ShieldCheck size={17} />
+        <h2>SVG 插画安全校验</h2>
+      </div>
+      <dl className="layout-diagnostics-grid">
+        <div>
+          <dt>模式</dt>
+          <dd>安全 SVG</dd>
+        </div>
+        <div>
+          <dt>结果</dt>
+          <dd>{statusLabel}</dd>
+        </div>
+        <div>
+          <dt>元素</dt>
+          <dd>{diagnostics.sanitizedElementCount}</dd>
+        </div>
+        <div>
+          <dt>局部</dt>
+          <dd>{diagnostics.partCount}</dd>
+        </div>
+      </dl>
+      <div className="svg-diagnostics-copy">
+        <p>{diagnostics.fallbackReason ?? diagnostics.qualityNotes ?? 'AI SVG 已清洗后进入画布，导出时只使用安全内容。'}</p>
+        <small>
+          丢弃标签 {diagnostics.droppedElementCount} · 丢弃属性 {diagnostics.droppedAttributeCount} · 安全字符 {diagnostics.safeMarkupLength}
+        </small>
+      </div>
       {diagnostics.warnings.length ? <p className="layout-warning">{diagnostics.warnings.slice(0, 2).join('；')}</p> : null}
     </section>
   );
@@ -2343,6 +2504,7 @@ const StatusOverlay = ({
   status,
   diagnostics,
   showInterimTranscript,
+  generationMode,
   aiStatus,
   selected,
   selection,
@@ -2362,6 +2524,7 @@ const StatusOverlay = ({
   status: string;
   diagnostics: SpeechDiagnostics;
   showInterimTranscript: boolean;
+  generationMode: AppSettings['aiGenerationMode'];
   aiStatus: AiResolutionStatus;
   selected?: SceneObject;
   selection: SceneState['selection'];
@@ -2413,6 +2576,10 @@ const StatusOverlay = ({
             <strong>{objectCount}</strong>
           </span>
           <span>
+            模式
+            <strong>{generationMode === 'safe-svg-artwork' ? 'SVG 插画' : '可编辑'}</strong>
+          </span>
+          <span>
             延迟
             <strong>{lastResult ? `${lastResult.latencyMs}ms` : '-'}</strong>
           </span>
@@ -2442,6 +2609,7 @@ const StatusOverlay = ({
         <AiStatusBlock status={aiStatus} voiceStatus={status} objectCount={objectCount} selected={selected} selection={selection} lastResult={lastResult} />
         <ExecutionPathBlock aiStatus={aiStatus} lastResult={lastResult} />
         <AiLayoutDiagnosticsBlock diagnostics={lastResult?.layoutDiagnostics} />
+        <SvgArtworkDiagnosticsBlock diagnostics={lastResult?.svgArtworkDiagnostics} />
         <ClarificationFlowBlock clarification={clarification} lastTranscript={lastTranscript} selected={selected} />
         <RailObjectInspector selected={selected} objectCount={objectCount} lastResult={lastResult} />
 
@@ -2563,6 +2731,26 @@ const SettingsWorkspace = ({
               <option value="deepseek-v4-pro">deepseek-v4-pro</option>
             </select>
           </label>
+          <div className="settings-field">
+            <span>生图模式</span>
+            <div className="settings-segment generation-mode" aria-label="AI 生图模式">
+              <button
+                type="button"
+                className={settings.aiGenerationMode === 'editable-recipe' ? 'active' : ''}
+                onClick={() => onSettingsChange((current) => ({ ...current, aiGenerationMode: 'editable-recipe' }))}
+              >
+                可编辑配方
+              </button>
+              <button
+                type="button"
+                className={settings.aiGenerationMode === 'safe-svg-artwork' ? 'active' : ''}
+                onClick={() => onSettingsChange((current) => ({ ...current, aiGenerationMode: 'safe-svg-artwork' }))}
+              >
+                SVG 插画
+              </button>
+            </div>
+            <small>插画模式会先清洗 AI SVG；失败时自动回到可编辑配方。</small>
+          </div>
           <label className="settings-field">
             <span>超时 ms</span>
             <input
@@ -2682,6 +2870,10 @@ const SettingsWorkspace = ({
         <div>
           <dt>API key</dt>
           <dd>{sessionKeyConfigured ? '本次会话已配置' : '使用服务端环境变量或未配置'}</dd>
+        </div>
+        <div>
+          <dt>生图模式</dt>
+          <dd>{settings.aiGenerationMode === 'safe-svg-artwork' ? '安全 SVG 插画' : '可编辑配方'}</dd>
         </div>
         <div>
           <dt>语音阶段</dt>
@@ -2849,6 +3041,7 @@ const detectSettingsCommand = (
   | { type: 'open'; tab: SettingsTab }
   | { type: 'close' }
   | { type: 'model'; model: AppSettings['aiModel'] }
+  | { type: 'generation-mode'; mode: AppSettings['aiGenerationMode'] }
   | { type: 'voice-policy'; mode: EndpointPolicyMode }
   | { type: 'test-ai' }
   | null => {
@@ -2856,6 +3049,8 @@ const detectSettingsCommand = (
   if (/(测试|检查).*(AI|ai|DeepSeek|deepseek).*(连接|配置|调用)/i.test(text) || /(AI|ai|DeepSeek|deepseek).*(连接测试|测试连接)/i.test(text)) return { type: 'test-ai' };
   if (/deepseek-v4-pro/i.test(text) || /(模型|model).*(pro|高级|强)/i.test(text)) return { type: 'model', model: 'deepseek-v4-pro' };
   if (/deepseek-v4-flash/i.test(text) || /(模型|model).*(flash|快速|快)/i.test(text)) return { type: 'model', model: 'deepseek-v4-flash' };
+  if (/(svg|SVG|插画|好看|精美|展示).*(模式|生图|生成)/i.test(text) || /(切换|换|用).*(svg|SVG|插画|好看|精美)/i.test(text)) return { type: 'generation-mode', mode: 'safe-svg-artwork' };
+  if (/(可编辑|配方|基础矢量).*(模式|生图|生成)/i.test(text) || /(切换|换|用).*(可编辑|配方|基础矢量)/i.test(text)) return { type: 'generation-mode', mode: 'editable-recipe' };
   if (/(语音|监听).*(fast|快速|快模式)/i.test(text)) return { type: 'voice-policy', mode: 'fast' };
   if (/(语音|监听).*(patient|耐心|慢一点|等久一点)/i.test(text)) return { type: 'voice-policy', mode: 'patient' };
   if (/(语音|监听).*(balanced|平衡|默认)/i.test(text)) return { type: 'voice-policy', mode: 'balanced' };
@@ -2872,6 +3067,42 @@ const isCreativeAiCandidate = (text: string, reason?: string) => {
   if (reason?.includes('没有识别出要画的图形')) return true;
   return !/(圆形|圆|矩形|长方形|正方形|三角形|椭圆|线条|直线|文字|文本|房子|房屋|太阳|树|机器人)/.test(text);
 };
+
+const createSvgArtworkCommand = (artwork: SvgArtworkData, transcript: string): DrawingCommand => {
+  const bounds = createSvgArtworkObjectBounds();
+  const groupId = `svg-artwork-${Date.now()}`;
+  return {
+    type: 'create_object',
+    object: createSceneObject('svg_artwork', {
+      id: `${groupId}-object`,
+      name: artwork.name || transcript.slice(0, 24) || 'AI SVG 插画',
+      groupId,
+      groupName: artwork.name || 'AI SVG 插画',
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      fill: 'none',
+      stroke: '#2563eb',
+      strokeWidth: 2,
+      svgArtwork: artwork
+    })
+  };
+};
+
+const createSvgFallbackDiagnostics = (transcript: string, reason: string): SvgArtworkDiagnostics => ({
+  generationMode: 'safe-svg-artwork',
+  schemaVersion: 'svg-artwork-1.0',
+  transcript,
+  sanitizerStatus: 'fallback',
+  sanitizedElementCount: 0,
+  droppedElementCount: 0,
+  droppedAttributeCount: 0,
+  partCount: 0,
+  safeMarkupLength: 0,
+  fallbackReason: reason,
+  warnings: [reason]
+});
 
 const createLocalCreativeAssetIntent = (text: string): DrawingIntent | null => {
   if (/(猫|小猫|小花猫|戴帽子的猫|戴帽子的小猫)/.test(text)) {
@@ -2956,7 +3187,8 @@ const shapeKindLabel = (kind: SceneObject['kind']) => {
     ellipse: '椭圆',
     line: '线条',
     triangle: '三角形',
-    text: '文字'
+    text: '文字',
+    svg_artwork: 'AI SVG 插画'
   };
   return labels[kind];
 };

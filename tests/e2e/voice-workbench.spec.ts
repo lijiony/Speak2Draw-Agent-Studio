@@ -4,7 +4,20 @@ declare global {
   interface Window {
     __speak2drawTest?: {
       submitTranscript: (text: string, confidence?: number) => Promise<void>;
-      getScene: () => { objects: Array<{ name: string; groupName?: string; partName?: string; kind: string; x: number; y: number; width: number; height: number; style: { fill: string } }> };
+      getScene: () => {
+        objects: Array<{
+          name: string;
+          groupName?: string;
+          partName?: string;
+          kind: string;
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+          style: { fill: string };
+          svgArtwork?: { safeMarkup: string; parts: Array<{ id: string; partName: string }> };
+        }>;
+      };
       getAiStatus: () => { state: string; message: string };
       getClarification: () => { originalTranscript: string; question: string } | null;
       getVoiceDiagnostics: () => { policyMode: string; phase: string; interimText: string | null; finalText: string | null };
@@ -27,7 +40,7 @@ declare global {
       };
       emitSpeechEvent: (event: { text?: string; confidence?: number; isFinal?: boolean; source?: 'final' | 'interim-fallback' | 'manual-test' }) => Promise<void>;
       getWorkbenchLayout: () => 'focus' | 'side-inspector' | 'bottom-inspector';
-      getSettings: () => { aiModel: string; aiBaseUrl: string; sessionKeyConfigured: boolean; voicePolicyMode: string; aiFallbackEnabled: boolean };
+      getSettings: () => { aiModel: string; aiBaseUrl: string; sessionKeyConfigured: boolean; voicePolicyMode: string; aiFallbackEnabled: boolean; aiGenerationMode: string };
     };
   }
 }
@@ -776,6 +789,164 @@ test('AI 可以把缺失元素生成安全矢量配方', async ({ page }) => {
   expect(consoleErrors).toEqual([]);
 });
 
+test('安全 SVG 插画模式可以生成、局部编辑并安全导出', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window.URL, 'createObjectURL', {
+      configurable: true,
+      value: (blob: Blob) => {
+        void blob.text().then((text) => {
+          (window as Window & { __exportedSvg?: string }).__exportedSvg = text;
+        });
+        return 'blob:speak2draw-test';
+      }
+    });
+    Object.defineProperty(window.URL, 'revokeObjectURL', {
+      configurable: true,
+      value: () => undefined
+    });
+    HTMLAnchorElement.prototype.click = () => undefined;
+  });
+  const consoleErrors = await openWorkbench(page);
+  const aiRequests: Array<{ generationMode?: string; transcript: string }> = [];
+
+  await page.route('**/api/ai/intent', async (route) => {
+    const requestBody = route.request().postDataJSON() as { generationMode?: string; transcript: string };
+    aiRequests.push(requestBody);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        schemaVersion: 'svg-artwork-1.0',
+        rawIntentSummary: 'svg_artwork:戴帽子的小猫, parts 2',
+        artwork: {
+          schemaVersion: 'svg-artwork-1.0',
+          name: '戴帽子的小猫',
+          viewBox: '0 0 960 600',
+          svg: '<svg viewBox="0 0 960 600"><g id="cat-face" data-part-name="脸" data-role="body"><circle cx="480" cy="310" r="92" fill="#f8fafc" stroke="#111827" stroke-width="6"/></g><g id="cat-hat" data-part-name="帽子" data-role="accessory"><rect x="410" y="150" width="140" height="54" rx="12" fill="#2563eb" stroke="#111827" stroke-width="5"/></g></svg>',
+          parts: [
+            { id: 'cat-face', partName: '脸', role: 'body', editable: true },
+            { id: 'cat-hat', partName: '帽子', role: 'accessory', editable: true }
+          ],
+          qualityNotes: '主体居中，帽子和脸分层。'
+        }
+      })
+    });
+  });
+
+  await page.getByRole('button', { name: '打开设置' }).click();
+  await page.locator('.generation-mode').getByRole('button', { name: 'SVG 插画' }).click();
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getSettings().aiGenerationMode)).toBe('safe-svg-artwork');
+  await submitVoiceText(page, '关闭设置');
+
+  await submitVoiceText(page, '画一只戴帽子的猫');
+  await expect(systemFeedback(page)).toContainText('已生成安全 SVG 插画');
+  await expect(page.locator('[id="cat-hat"]')).toHaveCount(1);
+  const scene = await page.evaluate(() => window.__speak2drawTest?.getScene());
+  expect(scene?.objects).toHaveLength(1);
+  expect(scene?.objects[0]).toMatchObject({
+    kind: 'svg_artwork',
+    groupName: '戴帽子的小猫'
+  });
+  expect(scene?.objects[0].svgArtwork?.parts.map((part) => part.partName)).toEqual(['脸', '帽子']);
+  expect(aiRequests.map((request) => request.generationMode)).toEqual(['safe-svg-artwork']);
+
+  await submitVoiceText(page, '打开状态信息');
+  const statusDialog = page.getByRole('dialog', { name: '状态信息' });
+  await expect(statusDialog.getByText('SVG 插画安全校验')).toBeVisible();
+  await expect(statusDialog.getByText('已通过')).toBeVisible();
+
+  await submitVoiceText(page, '选择帽子');
+  await expect(page.locator('svg .part-selection-box')).toHaveCount(1);
+  await submitVoiceText(page, '把帽子删掉');
+  await expect(systemFeedback(page)).toContainText('已删除帽子。');
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getScene().objects[0]?.svgArtwork?.parts.map((part) => part.partName) ?? [])).toEqual(['脸']);
+  expect(await page.locator('[id="cat-hat"]').count()).toBe(0);
+  expect(await page.locator('[id="cat-face"]').count()).toBe(1);
+
+  await submitVoiceText(page, '导出图片');
+  await expect
+    .poll(() => page.evaluate(() => (window as Window & { __exportedSvg?: string }).__exportedSvg ?? ''))
+    .toContain('data-kind="safe-svg-artwork"');
+  const exportedSvg = await page.evaluate(() => (window as Window & { __exportedSvg?: string }).__exportedSvg ?? '');
+  expect(exportedSvg).toContain('cat-face');
+  expect(exportedSvg).not.toMatch(/script|onload|foreignObject|href=/i);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('SVG 插画校验失败时自动回退到可编辑配方模式', async ({ page }) => {
+  const consoleErrors = await openWorkbench(page);
+  const requestModes: Array<string | undefined> = [];
+
+  await page.route('**/api/ai/intent', async (route) => {
+    const requestBody = route.request().postDataJSON() as { generationMode?: string };
+    requestModes.push(requestBody.generationMode);
+    if (requestBody.generationMode === 'safe-svg-artwork') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          provider: 'deepseek',
+          model: 'deepseek-v4-flash',
+          schemaVersion: 'svg-artwork-1.0',
+          rawIntentSummary: 'svg_artwork:危险猫, parts 1',
+          artwork: {
+            schemaVersion: 'svg-artwork-1.0',
+            name: '危险猫',
+            viewBox: '0 0 960 600',
+            svg: '<svg viewBox="0 0 960 600"><script>alert(1)</script><g id="cat-hat" data-part-name="帽子"><rect x="420" y="120" width="120" height="70" fill="url(http://evil)"/></g></svg>',
+            parts: [{ id: 'cat-hat', partName: '帽子', editable: true }],
+            qualityNotes: '包含不安全内容。'
+          }
+        })
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        schemaVersion: '2.0',
+        rawIntentSummary: 'create_asset_recipe:戴帽子的小猫, recipe 2',
+        intent: {
+          type: 'create_asset_recipe',
+          name: '戴帽子的小猫',
+          recipe: [
+            { shape: 'circle', name: '猫脸', partName: '脸', color: '#f9fafb', slot: 'center', size: 'large' },
+            { shape: 'rectangle', name: '蓝色帽子', partName: '帽子', color: '#2563eb', slot: 'top', relativeTo: '脸', size: 'small' }
+          ]
+        }
+      })
+    });
+  });
+
+  await page.getByRole('button', { name: '打开设置' }).click();
+  await page.locator('.generation-mode').getByRole('button', { name: 'SVG 插画' }).click();
+  await submitVoiceText(page, '关闭设置');
+
+  await submitVoiceText(page, '画一只戴帽子的猫');
+  await expect(systemFeedback(page)).toContainText('已拆解并执行 2 个绘图步骤。');
+  await expect(aiStatus(page)).toContainText('SVG 插画校验失败，已使用可编辑配方模式。');
+  expect(requestModes).toEqual(['safe-svg-artwork', 'editable-recipe']);
+  const scene = await page.evaluate(() => window.__speak2drawTest?.getScene());
+  expect(scene?.objects.map((object) => object.kind)).toEqual(['circle', 'rectangle']);
+  expect(scene?.objects.map((object) => object.partName)).toEqual(['脸', '帽子']);
+
+  await submitVoiceText(page, '打开状态信息');
+  const statusDialog = page.getByRole('dialog', { name: '状态信息' });
+  await expect(statusDialog.getByText('SVG 插画安全校验')).toBeVisible();
+  await expect(statusDialog.locator('.svg-artwork-diagnostics').getByText('已回退', { exact: true })).toBeVisible();
+  await expect(statusDialog.locator('.svg-artwork-diagnostics').getByText('SVG 包含外链或不安全 URL。')).toBeVisible();
+  expect(consoleErrors).toEqual([]);
+});
+
 test('AI 返回重叠坐标时系统本地布局会重新排开', async ({ page }) => {
   const consoleErrors = await openWorkbench(page);
 
@@ -1095,7 +1266,11 @@ const queueSpeechText = async (
 };
 
 const hasPart = async (page: Page, partName: string) =>
-  page.evaluate((target) => window.__speak2drawTest?.getScene().objects.some((object) => object.partName === target) ?? false, partName);
+  page.evaluate(
+    (target) =>
+      window.__speak2drawTest?.getScene().objects.some((object) => object.partName === target || object.svgArtwork?.parts.some((part) => part.partName === target)) ?? false,
+    partName
+  );
 
 const systemFeedback = (page: Page) =>
   page.locator('section.info-block').filter({ hasText: '系统反馈' }).locator('p');
