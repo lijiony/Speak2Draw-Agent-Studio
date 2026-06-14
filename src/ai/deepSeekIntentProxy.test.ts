@@ -92,8 +92,11 @@ describe('deepSeekIntentProxy', () => {
   it('安全 SVG 插画模式调用独立提示词并解析 artwork 合同', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(init?.body as string) as { messages: Array<{ content: string }>; response_format?: { type: string }; max_tokens?: number };
-      expect(body.messages[0].content).toContain('SVG element list');
-      expect(body.messages[0].content).toContain('elements');
+      expect(body.messages[0].content).toContain('originalTranscript');
+      expect(body.messages[0].content).toContain('唯一语义来源');
+      const userPayload = JSON.parse(body.messages[1].content) as { originalTranscript: string; svgRequirements: { maxElements: number } };
+      expect(userPayload.originalTranscript).toBe('画一只戴帽子的猫');
+      expect(userPayload.svgRequirements.maxElements).toBe(10);
       expect(body.response_format).toEqual({ type: 'json_object' });
       expect(body.max_tokens).toBe(3000);
       return new Response(

@@ -47,13 +47,24 @@ describe('svgArtworkContract', () => {
     expect(artwork?.svg).toContain('Lion');
   });
 
-  it('提示词发送短 brief 而不是完整 SVG 字符串要求', () => {
-    const payload = toAiIntentRequestPayload('画一个狮子', createEmptyScene(), '测试', undefined, 'safe-svg-artwork');
+  it('提示词发送原话和固定 SVG 要求，不用本地映射替代语义', () => {
+    const payload = toAiIntentRequestPayload('画一只戴帽子的狗', createEmptyScene(), '测试', undefined, 'safe-svg-artwork');
     const messages = buildDeepSeekSvgArtworkMessages(payload);
+    const userPayload = JSON.parse(messages[1].content) as {
+      originalTranscript: string;
+      svgRequirements: {
+        preserveSemantics: string;
+        maxElements: number;
+        partNameLanguage: string;
+      };
+    };
 
-    expect(messages[0].content).toContain('SVG element list');
-    expect(messages[0].content).toContain('elements');
-    expect(messages[1].content.length).toBeLessThan(600);
-    expect(messages[1].content).toContain('lion');
+    expect(messages[0].content).toContain('originalTranscript 是用户原话');
+    expect(messages[0].content).toContain('唯一语义来源');
+    expect(userPayload.originalTranscript).toBe('画一只戴帽子的狗');
+    expect(userPayload.svgRequirements.maxElements).toBe(10);
+    expect(userPayload.svgRequirements.partNameLanguage).toBe('中文');
+    expect(userPayload.svgRequirements.preserveSemantics).toContain('戴帽子');
+    expect(messages[1].content).not.toContain('dog with hat');
   });
 });

@@ -48,7 +48,7 @@ export type AiSvgArtworkResponsePayload = AiSvgArtworkSuccessPayload | AiSvgArtw
 export const buildDeepSeekSvgArtworkMessages = (payload: AiIntentRequestPayload) => [
   {
     role: 'system',
-    content: buildSvgArtworkSystemPrompt(payload)
+    content: SVG_ARTWORK_SYSTEM_PROMPT
   },
   {
     role: 'user',
@@ -130,50 +130,43 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
 const toSvgArtworkPrompt = (payload: AiIntentRequestPayload) => {
-  const assetSummary = payload.scene.assets
-    .slice(0, 3)
-    .map((asset) => `${asset.groupName}(${asset.parts.slice(0, 6).map((part) => part.partName || part.name).join('/')})`)
-    .join('；');
-  const englishHint = svgArtworkEnglishHint(payload.transcript);
-  const selected = payload.scene.selectedName ? ` 当前选中：${payload.scene.selectedName}。` : '';
-  const scene = assetSummary ? ` 当前画布：${assetSummary}。` : '';
-  return `json: ${englishHint ? `${englishHint}. Chinese part names.` : svgArtworkSubject(payload.transcript)}，10个元素以内。${selected}${scene}`;
+  return JSON.stringify({
+    originalTranscript: payload.transcript,
+    svgRequirements: SVG_ARTWORK_REQUIREMENTS,
+    ...(payload.scene.selectedName || payload.scene.selection || payload.scene.assets.length
+      ? {
+          sceneContext: {
+            selectedName: payload.scene.selectedName,
+            selection: payload.scene.selection,
+            assets: payload.scene.assets.slice(0, 3).map((asset) => ({
+              groupName: asset.groupName,
+              parts: asset.parts.slice(0, 8).map((part) => ({
+                name: part.name,
+                partName: part.partName,
+                kind: part.kind,
+                fill: part.fill
+              }))
+            }))
+          }
+        }
+      : {})
+  });
 };
 
-const buildSvgArtworkSystemPrompt = (payload: AiIntentRequestPayload) => {
-  const subject = svgArtworkSubject(payload.transcript);
-  const englishHint = svgArtworkEnglishHint(payload.transcript);
-  const target = englishHint || subject;
-  return `Return json only. Very short. Create SVG element list for geometric ${target} sticker art. Format {"name":"${escapeJsonExample(subject)}","elements":[{"tag":"circle","id":"head","partName":"头","attrs":{"cx":480,"cy":260,"r":80,"fill":"#f59e0b"}}],"parts":[{"id":"head","partName":"头"}],"qualityNotes":""}. partName must be Chinese.`;
-};
+const SVG_ARTWORK_SYSTEM_PROMPT =
+  '只输出 json。输入 JSON 里 originalTranscript 是用户原话，svgRequirements 是固定生成要求。必须以 originalTranscript 为唯一语义来源，不要翻译、简化或丢失修饰词。按 svgRequirements 输出，不要 Markdown 或解释。';
 
-const svgArtworkSubject = (text: string) =>
-  text
-    .replace(/[。！？!?.，,]/g, ' ')
-    .replace(/^\s*(请|帮我|给我)?\s*(画|生成|绘制|做|创建)\s*/g, '')
-    .replace(/^(一个|一只|一条|一幅|一张)\s*/g, '')
-    .trim()
-    .slice(0, 24) || '作品';
-
-const escapeJsonExample = (value: string) => value.replace(/\\/g, '').replace(/"/g, '').slice(0, 24) || '作品';
-
-const svgArtworkEnglishHint = (text: string) => {
-  const entries: Array<[RegExp, string]> = [
-    [/猫.*帽|帽.*猫/, 'cat with hat'],
-    [/狮子|lion/i, 'lion'],
-    [/猫|cat/i, 'cat'],
-    [/狗|dog/i, 'dog'],
-    [/房子|房屋|house/i, 'house'],
-    [/太阳.*房|房.*太阳/, 'house under sun'],
-    [/太阳|sun/i, 'sun'],
-    [/小船|帆船|船|boat|ship/i, 'sailboat'],
-    [/花瓶|vase/i, 'vase with flowers'],
-    [/花|flower/i, 'flower'],
-    [/树|tree/i, 'tree'],
-    [/车|汽车|car/i, 'car']
-  ];
-  return entries.find(([pattern]) => pattern.test(text))?.[1];
-};
+const SVG_ARTWORK_REQUIREMENTS = {
+  output: '返回 {name,elements,parts,qualityNotes}，不要返回 SVG 字符串',
+  elementExample: { tag: 'circle', id: 'head', partName: '头', attrs: { cx: 480, cy: 260, r: 80, fill: '#f59e0b' } },
+  partExample: { id: 'head', partName: '头' },
+  style: '几何贴纸风，主体完整居中',
+  maxElements: 10,
+  allowedTags: 'g,circle,ellipse,rect,line,polygon,text',
+  forbidden: 'path/href/style/script/image/use/defs/url/base64/外链/HTML/事件属性',
+  partNameLanguage: '中文',
+  preserveSemantics: '必须保留原话对象、颜色、数量、动作、位置、风格和局部要求；原话有“戴帽子”就必须有帽子局部。'
+} as const;
 
 const PART_NAME_MAP: Record<string, string> = {
   head: '头',
