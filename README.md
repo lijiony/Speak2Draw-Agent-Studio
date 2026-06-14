@@ -1,5 +1,5 @@
 # Speak2Draw-Agent-Studio
-设计文档：[docs/design.md](docs/design.md)｜视频链接：｜演示项目链接：[https://speak2draw-agent-studio.netlify.app](https://speak2draw-agent-studio.netlify.app)
+设计文档：[docs/design.md](docs/design.md)｜视频链接：[https://b23.tv/5F7rFTO](https://b23.tv/5F7rFTO)｜演示项目链接：[https://speak2draw-agent-studio.netlify.app](https://speak2draw-agent-studio.netlify.app)
 
 一个面向“AI 语音绘图工具”议题的项目。用户通过语音指令完成绘图创作，项目重点关注语音指令理解、绘图操作执行、容错处理、响应延迟和复杂指令拆解。
 
