@@ -77,7 +77,10 @@ export const resolveDeepSeekIntent = async (
       rawIntentSummary: summarizeDeepSeekIntentContent(content)
     };
   } catch (error) {
-    const reason = error instanceof Error && error.name === 'AbortError' ? 'DeepSeek 响应超时。' : 'AI 指令解析请求失败。';
+    const reason =
+      error instanceof Error && error.name === 'AbortError'
+        ? 'DeepSeek 指令解析超时；连接测试只验证接口连通性，请调高 AI 超时时间或稍后重试。'
+        : 'AI 指令解析请求失败。';
     return { ok: false, provider: 'deepseek', reason };
   } finally {
     clearTimeout(timeout);
@@ -101,9 +104,9 @@ export const isAiIntentPayload = (payload: unknown): payload is AiIntentRequestP
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 const safeTimeoutMs = (value?: string) => {
-  const parsed = Number(value || 15000);
-  if (!Number.isFinite(parsed)) return 15000;
-  return Math.round(Math.min(15000, Math.max(1500, parsed)));
+  const parsed = Number(value || 30000);
+  if (!Number.isFinite(parsed)) return 30000;
+  return Math.round(Math.min(60000, Math.max(1500, parsed)));
 };
 
 export const resolveDeepSeekSvgArtwork = async (
@@ -154,7 +157,10 @@ export const resolveDeepSeekSvgArtwork = async (
       rawIntentSummary: summarizeDeepSeekSvgArtworkContent(content)
     };
   } catch (error) {
-    const reason = error instanceof Error && error.name === 'AbortError' ? 'DeepSeek 响应超时。' : 'AI SVG 插画请求失败。';
+    const reason =
+      error instanceof Error && error.name === 'AbortError'
+        ? 'DeepSeek SVG 插画生成超时；连接测试只验证接口连通性，已回退到可编辑配方模式。'
+        : 'AI SVG 插画请求失败。';
     return { ok: false, provider: 'deepseek', reason };
   } finally {
     clearTimeout(timeout);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadAppSettings, saveAppSettings, toPublicSettingsSnapshot } from './appSettings';
+import { loadAppSettings, sanitizeSettings, saveAppSettings, toPublicSettingsSnapshot } from './appSettings';
 
 describe('appSettings', () => {
   it('只持久化非敏感设置', () => {
@@ -55,5 +55,11 @@ describe('appSettings', () => {
     expect(loadAppSettings().aiGenerationMode).toBe('editable-recipe');
 
     vi.unstubAllGlobals();
+  });
+
+  it('允许复杂 AI 绘图使用更长超时并限制最大值', () => {
+    expect(sanitizeSettings({ aiTimeoutMs: 60000 }).aiTimeoutMs).toBe(60000);
+    expect(sanitizeSettings({ aiTimeoutMs: 999999 }).aiTimeoutMs).toBe(60000);
+    expect(sanitizeSettings({ aiTimeoutMs: 10 }).aiTimeoutMs).toBe(1500);
   });
 });

@@ -66,6 +66,9 @@ type AiResolutionStatus = {
   message: string;
 };
 
+const AI_GENERATING_NOTICE = 'AI 正在生成中，请先别继续说；后续语音会排队。';
+const SVG_ARTWORK_MIN_TIMEOUT_MS = 45000;
+
 type ClarificationState = AiClarificationContext & {
   waiting: true;
   createdAt: number;
@@ -265,12 +268,15 @@ export const App = () => {
   }, []);
 
   const getAiRequestOptions = useCallback(
-    (): AiRequestOptions => ({
-      baseUrl: settingsRef.current.aiBaseUrl,
-      model: settingsRef.current.aiModel,
-      timeoutMs: settingsRef.current.aiTimeoutMs,
-      sessionApiKey: sessionApiKeyRef.current || undefined
-    }),
+    (mode: AppSettings['aiGenerationMode'] = 'editable-recipe'): AiRequestOptions => {
+      const configuredTimeoutMs = settingsRef.current.aiTimeoutMs;
+      return {
+        baseUrl: settingsRef.current.aiBaseUrl,
+        model: settingsRef.current.aiModel,
+        timeoutMs: mode === 'safe-svg-artwork' ? Math.max(configuredTimeoutMs, SVG_ARTWORK_MIN_TIMEOUT_MS) : configuredTimeoutMs,
+        sessionApiKey: sessionApiKeyRef.current || undefined
+      };
+    },
     []
   );
 
@@ -554,16 +560,22 @@ export const App = () => {
 
       const aiFallbackEnabled = settingsRef.current.aiFallbackEnabled;
       if (aiFallbackEnabled && (activeClarification || shouldUseAiIntentFallback(localIntent, plan, transcript))) {
-        pushWorkflowEvent('正在请求 AI', activeClarification ? '结合上一轮澄清继续解析。' : transcript.text, 'info');
-        setAiStatus({
-          state: 'checking',
-            message: activeClarification ? '正在结合上一轮澄清请求 DeepSeek。' : '正在请求 DeepSeek 解析这条语音。'
-          });
         const aiReason = activeClarification ? activeClarification.question : plan.message ?? localIntent.reason;
         const wantsSvgArtwork = settingsRef.current.aiGenerationMode === 'safe-svg-artwork' && creativeAiCandidate && !activeClarification;
+        const aiGeneratingMessage = wantsSvgArtwork
+          ? 'AI 正在生成 SVG 插画，请先别继续说；后续语音会排队。'
+          : activeClarification
+            ? 'AI 正在结合上一轮澄清生成绘图方案，请先别继续说。'
+            : AI_GENERATING_NOTICE;
+        pushWorkflowEvent('AI 正在生成中', aiGeneratingMessage, 'info');
+        setAiStatus({
+          state: 'checking',
+          message: aiGeneratingMessage
+        });
+        updateVoiceRuntime({ phase: 'processing', recentEvent: aiGeneratingMessage, lastError: null });
         let svgArtworkHandled = false;
         if (wantsSvgArtwork) {
-          const svgResult = await resolveAiSvgArtwork(transcript, executionScene, aiReason, undefined, getAiRequestOptions());
+          const svgResult = await resolveAiSvgArtwork(transcript, executionScene, aiReason, undefined, getAiRequestOptions('safe-svg-artwork'));
           if (svgResult.ok) {
             const sanitizeResult = sanitizeSvgArtwork(svgResult.artwork, transcript.text);
             if (sanitizeResult.ok && sanitizeResult.artwork) {
@@ -607,7 +619,7 @@ export const App = () => {
             executionScene,
             aiReason,
             activeClarification ?? undefined,
-            getAiRequestOptions()
+            getAiRequestOptions('editable-recipe')
           );
           if (aiResult.ok) {
             const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
@@ -627,7 +639,7 @@ export const App = () => {
             } else if (svgArtworkFallbackDiagnostics) {
               plan = { ...plan, svgArtworkDiagnostics: svgArtworkFallbackDiagnostics };
             }
-            aiHistoryLabel = svgArtworkFallbackDiagnostics ? 'SVG 回退到 DeepSeek 配方' : 'DeepSeek';
+            aiHistoryLabel = svgArtworkFallbackDiagnostics ? 'SVG 插画失败，已用可编辑配方生成' : 'DeepSeek';
             setAiStatus({
               state: 'used',
               message: svgArtworkFallbackDiagnostics ? `SVG 插画校验失败，已使用可编辑配方模式。` : `DeepSeek 已解析为 ${aiResult.intent.type}。`
@@ -2131,6 +2143,13 @@ const AiStatusBlock = ({
       <b>{selected?.groupName ?? '无'}</b>
     </div>
     <p>{humanAiMessage(status)}</p>
+    {status.state === 'checking' ? (
+      <div className="ai-generating-banner" role="status" aria-live="polite">
+        <Sparkles size={15} />
+        <strong>AI 正在生成中</strong>
+        <span>请先别继续说；后续语音会排队。</span>
+      </div>
+    ) : null}
     <dl className="compact-metrics">
       <div>
         <dt>总数</dt>
@@ -2271,6 +2290,7 @@ const AiLayoutDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionResu
 
 const SvgArtworkDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionResult['svgArtworkDiagnostics'] }) => {
   if (!diagnostics) return null;
+  const didNotReachSanitizer = diagnostics.sanitizerStatus === 'fallback' && diagnostics.safeMarkupLength === 0 && diagnostics.sanitizedElementCount === 0;
   const statusLabel =
     diagnostics.sanitizerStatus === 'accepted'
       ? '已通过'
@@ -2304,7 +2324,9 @@ const SvgArtworkDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionRe
       <div className="svg-diagnostics-copy">
         <p>{diagnostics.fallbackReason ?? diagnostics.qualityNotes ?? 'AI SVG 已清洗后进入画布，导出时只使用安全内容。'}</p>
         <small>
-          丢弃标签 {diagnostics.droppedElementCount} · 丢弃属性 {diagnostics.droppedAttributeCount} · 安全字符 {diagnostics.safeMarkupLength}
+          {didNotReachSanitizer
+            ? '未收到可清洗的 SVG，未进入标签清洗统计。'
+            : `丢弃标签 ${diagnostics.droppedElementCount} · 丢弃属性 ${diagnostics.droppedAttributeCount} · 安全字符 ${diagnostics.safeMarkupLength}`}
         </small>
       </div>
       {diagnostics.warnings.length ? <p className="layout-warning">{diagnostics.warnings.slice(0, 2).join('；')}</p> : null}
@@ -2433,6 +2455,12 @@ const StatusSummary = ({
       </span>
     </div>
     <p>{humanAiMessage(aiStatus)}</p>
+    {aiStatus.state === 'checking' ? (
+      <div className="ai-generating-mini" role="status" aria-live="polite">
+        <Sparkles size={14} />
+        <span>AI 正在生成中，请先别继续说</span>
+      </div>
+    ) : null}
     <small>这里显示最近一次绘图指令；设置页的“测试 AI 连接”只验证接口连通性。</small>
   </section>
 );
@@ -2757,11 +2785,12 @@ const SettingsWorkspace = ({
               aria-label="AI 超时时间"
               type="number"
               min={1500}
-              max={15000}
+              max={60000}
               step={500}
               value={settings.aiTimeoutMs}
               onChange={(event) => onSettingsChange((current) => ({ ...current, aiTimeoutMs: Number(event.target.value) }))}
             />
+            <small>连接测试只验证接口可达；复杂 SVG 插画会使用更长生成窗口。</small>
           </label>
           <label className="settings-field">
             <span>API key</span>
@@ -2855,7 +2884,7 @@ const SettingsWorkspace = ({
         <div>
           <h2>AI 连接测试</h2>
           <p>{aiConnectionStatus.message}</p>
-          <small>这是设置页发起的接口连通性测试；画布里的“绘图 AI 状态”只记录最近一次语音绘图是否使用 AI 解析。</small>
+          <small>这是设置页发起的接口连通性测试；通过不代表复杂 SVG 绘图一定不会超时，画布里的状态记录最近一次真实生成结果。</small>
         </div>
       </div>
       <dl>
@@ -3022,7 +3051,7 @@ const voiceStatusMessage = (
 };
 
 const humanAiMessage = (status: AiResolutionStatus) => {
-  if (status.state === 'checking') return '正在理解这句话。';
+  if (status.state === 'checking') return status.message || AI_GENERATING_NOTICE;
   if (status.state === 'used') return status.message.replace('DeepSeek 已解析为', 'AI 理解为');
   if (status.state === 'fallback') return `AI 暂未接管：${status.message}`;
   if (status.state === 'local') return status.message;

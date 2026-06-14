@@ -22,7 +22,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   aiBaseUrl: 'https://api.deepseek.com',
   aiModel: 'deepseek-v4-flash',
   aiGenerationMode: 'editable-recipe',
-  aiTimeoutMs: 15000,
+  aiTimeoutMs: 30000,
   voicePolicyMode: 'balanced',
   voiceLanguage: 'zh-CN',
   showInterimTranscript: true,
@@ -64,7 +64,7 @@ export const sanitizeSettings = (value: Partial<AppSettings>): AppSettings => ({
     value.aiGenerationMode === 'safe-svg-artwork' || value.aiGenerationMode === 'editable-recipe'
       ? value.aiGenerationMode
       : DEFAULT_APP_SETTINGS.aiGenerationMode,
-  aiTimeoutMs: clampNumber(value.aiTimeoutMs ?? DEFAULT_APP_SETTINGS.aiTimeoutMs, 1500, 15000),
+  aiTimeoutMs: clampNumber(value.aiTimeoutMs ?? DEFAULT_APP_SETTINGS.aiTimeoutMs, 1500, 60000),
   voicePolicyMode: isPolicyMode(value.voicePolicyMode) ? value.voicePolicyMode : DEFAULT_APP_SETTINGS.voicePolicyMode,
   voiceLanguage: 'zh-CN',
   showInterimTranscript: value.showInterimTranscript !== false,

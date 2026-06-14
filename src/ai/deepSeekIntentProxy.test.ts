@@ -132,6 +132,39 @@ describe('deepSeekIntentProxy', () => {
     });
   });
 
+  it('SVG 插画超时时说明连接测试和复杂生成的区别', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        })
+    );
+
+    const resultPromise = resolveDeepSeekSvgArtwork(
+      { ...payload, generationMode: 'safe-svg-artwork', transcript: '画一只狮子' },
+      {
+        DEEPSEEK_API_KEY: 'test-key',
+        DEEPSEEK_TIMEOUT_MS: '1500'
+      },
+      fetchMock as unknown as typeof fetch
+    );
+
+    await vi.advanceTimersByTimeAsync(1500);
+    const result = await resultPromise;
+    vi.useRealTimers();
+
+    expect(result).toEqual({
+      ok: false,
+      provider: 'deepseek',
+      reason: 'DeepSeek SVG 插画生成超时；连接测试只验证接口连通性，已回退到可编辑配方模式。'
+    });
+  });
+
   it('校验代理请求载荷结构', () => {
     expect(isAiIntentPayload(payload)).toBe(true);
     expect(isAiIntentPayload({ transcript: '画圆', scene: { objects: [], revision: 0, assets: [], selection: null, selectedName: null } })).toBe(true);

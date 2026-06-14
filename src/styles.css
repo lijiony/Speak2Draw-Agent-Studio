@@ -1736,6 +1736,37 @@ h2 {
   line-height: 1.45;
 }
 
+.ai-generating-banner,
+.ai-generating-mini {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: rgba(239, 246, 255, 0.82);
+}
+
+.ai-generating-banner {
+  margin: 9px 2px 0;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.ai-generating-banner strong {
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.ai-generating-banner span {
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .compact-metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -2514,6 +2545,14 @@ h2 {
   color: #334155;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.ai-generating-mini {
+  justify-content: flex-start;
+  padding: 6px 9px;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.2;
 }
 
 .status-summary small {

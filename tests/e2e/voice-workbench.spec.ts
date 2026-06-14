@@ -364,6 +364,8 @@ test('AI 慢请求期间后续语音会排队并按顺序执行', async ({ page 
 
   await queueSpeechText(page, '画一个戴帽子的小猫');
   await expect.poll(() => aiRequests.length).toBe(1);
+  await expect(page.locator('.status-summary .ai-generating-mini')).toContainText('AI 正在生成中，请先别继续说');
+  await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getAiStatus().message ?? '')).toContain('AI 正在生成中');
   await queueSpeechText(page, '把帽子删掉');
   await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getCommandQueue().pendingCount ?? 0)).toBe(1);
   await expect.poll(() => page.evaluate(() => window.__speak2drawTest?.getVoiceRuntime().processing ?? false)).toBe(true);
