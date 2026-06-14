@@ -37,7 +37,7 @@ import { executeDrawingCommands } from './domain/drawingExecutor';
 import { parseIntent } from './domain/intentParser';
 import { createEmptyScene, createSceneObject, findObjects } from './domain/sceneModel';
 import { createSvgArtworkObjectBounds, sanitizeSvgArtwork } from './domain/svgArtworkSanitizer';
-import type { DrawingCommand, DrawingIntent, DrawingRecipeItem, ExecutionResult, SceneObject, SceneState, SvgArtworkData, SvgArtworkDiagnostics, VoiceTranscript } from './domain/types';
+import type { DrawingCommand, DrawingIntent, ExecutionResult, SceneObject, SceneState, SvgArtworkData, SvgArtworkDiagnostics, VoiceTranscript } from './domain/types';
 import { runMicrophoneInputTest, type MicrophoneInputSample, type MicrophoneTestResult } from './voice/microphoneTest';
 import type { EndpointPolicyMode } from './voice/endpointPolicy';
 import { useSpeechInput, type SpeechDiagnostics } from './voice/useSpeechInput';
@@ -67,7 +67,7 @@ type AiResolutionStatus = {
 };
 
 const AI_GENERATING_NOTICE = 'AI 正在生成中，请先别继续说；后续语音会排队。';
-const SVG_ARTWORK_MIN_TIMEOUT_MS = 45000;
+const AI_GENERATION_MIN_TIMEOUT_MS = 30000;
 
 type ClarificationState = AiClarificationContext & {
   waiting: true;
@@ -273,7 +273,7 @@ export const App = () => {
       return {
         baseUrl: settingsRef.current.aiBaseUrl,
         model: settingsRef.current.aiModel,
-        timeoutMs: mode === 'safe-svg-artwork' ? Math.max(configuredTimeoutMs, SVG_ARTWORK_MIN_TIMEOUT_MS) : configuredTimeoutMs,
+        timeoutMs: Math.max(configuredTimeoutMs, AI_GENERATION_MIN_TIMEOUT_MS),
         sessionApiKey: sessionApiKeyRef.current || undefined
       };
     },
@@ -574,8 +574,8 @@ export const App = () => {
         });
         updateVoiceRuntime({ phase: 'processing', recentEvent: aiGeneratingMessage, lastError: null });
         let svgArtworkHandled = false;
-        if (wantsSvgArtwork) {
-          const svgResult = await resolveAiSvgArtwork(transcript, executionScene, aiReason, undefined, getAiRequestOptions('safe-svg-artwork'));
+        let aiResultFromParallel: Awaited<ReturnType<typeof resolveAiIntent>> | null = null;
+        const applySvgArtworkResult = (svgResult: Awaited<ReturnType<typeof resolveAiSvgArtwork>>) => {
           if (svgResult.ok) {
             const sanitizeResult = sanitizeSvgArtwork(svgResult.artwork, transcript.text);
             if (sanitizeResult.ok && sanitizeResult.artwork) {
@@ -592,35 +592,58 @@ export const App = () => {
                   transcript: transcript.text
                 }
               };
-              svgArtworkHandled = true;
               aiHistoryLabel = 'DeepSeek SVG';
               setAiStatus({
                 state: 'used',
                 message: `DeepSeek 已生成安全 SVG 插画。`
               });
               pushWorkflowEvent('SVG 插画校验通过', `${sanitizeResult.diagnostics.sanitizedElementCount} 个安全元素。`, 'ok');
-            } else {
-              svgArtworkFallbackDiagnostics = {
-                ...sanitizeResult.diagnostics,
-                sanitizerStatus: 'fallback',
-                fallbackReason: sanitizeResult.reason ?? sanitizeResult.diagnostics.fallbackReason ?? 'SVG 插画校验失败。'
-              };
-              pushWorkflowEvent('SVG 插画已回退', svgArtworkFallbackDiagnostics.fallbackReason ?? '安全校验未通过。', 'warning');
+              return true;
             }
+            svgArtworkFallbackDiagnostics = {
+              ...sanitizeResult.diagnostics,
+              sanitizerStatus: 'fallback',
+              fallbackReason: sanitizeResult.reason ?? sanitizeResult.diagnostics.fallbackReason ?? 'SVG 插画校验失败。'
+            };
+            pushWorkflowEvent('SVG 插画已回退', svgArtworkFallbackDiagnostics.fallbackReason ?? '安全校验未通过。', 'warning');
+            return false;
+          }
+          svgArtworkFallbackDiagnostics = createSvgFallbackDiagnostics(transcript.text, svgResult.reason);
+          pushWorkflowEvent('SVG 插画已回退', svgResult.reason, 'warning');
+          return false;
+        };
+        if (wantsSvgArtwork) {
+          const svgArtworkPromise = resolveAiSvgArtwork(transcript, executionScene, aiReason, undefined, getAiRequestOptions('safe-svg-artwork'));
+          const aiIntentPromise = resolveAiIntent(transcript, executionScene, aiReason, undefined, getAiRequestOptions('editable-recipe'));
+          const firstAiResult = await Promise.race([
+            svgArtworkPromise.then((result) => ({ mode: 'svg' as const, result })),
+            aiIntentPromise.then((result) => ({ mode: 'recipe' as const, result }))
+          ]);
+
+          if (firstAiResult.mode === 'svg') {
+            svgArtworkHandled = applySvgArtworkResult(firstAiResult.result);
+            if (!svgArtworkHandled) aiResultFromParallel = await aiIntentPromise;
           } else {
-            svgArtworkFallbackDiagnostics = createSvgFallbackDiagnostics(transcript.text, svgResult.reason);
-            pushWorkflowEvent('SVG 插画已回退', svgResult.reason, 'warning');
+            aiResultFromParallel = firstAiResult.result;
+            if (aiResultFromParallel.ok) {
+              svgArtworkFallbackDiagnostics = createSvgFallbackDiagnostics(transcript.text, 'SVG 插画仍在生成，已优先使用 AI 可编辑配方。');
+              void svgArtworkPromise.then(() => undefined);
+            } else {
+              svgArtworkHandled = applySvgArtworkResult(await svgArtworkPromise);
+            }
           }
         }
 
         if (!svgArtworkHandled) {
-          const aiResult = await resolveAiIntent(
-            transcript,
-            executionScene,
-            aiReason,
-            activeClarification ?? undefined,
-            getAiRequestOptions('editable-recipe')
-          );
+          const aiResult =
+            aiResultFromParallel ??
+            (await resolveAiIntent(
+              transcript,
+              executionScene,
+              aiReason,
+              activeClarification ?? undefined,
+              getAiRequestOptions('editable-recipe')
+            ));
           if (aiResult.ok) {
             const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
             executionScene = latestScene;
@@ -639,53 +662,26 @@ export const App = () => {
             } else if (svgArtworkFallbackDiagnostics) {
               plan = { ...plan, svgArtworkDiagnostics: svgArtworkFallbackDiagnostics };
             }
-            aiHistoryLabel = svgArtworkFallbackDiagnostics ? 'SVG 插画失败，已用可编辑配方生成' : 'DeepSeek';
+            const svgFallbackReason = svgArtworkFallbackDiagnostics?.fallbackReason ?? '';
+            const svgFallbackIsSlow = /仍在生成|优先使用/.test(svgFallbackReason);
+            aiHistoryLabel = svgArtworkFallbackDiagnostics ? (svgFallbackIsSlow ? 'SVG 插画较慢，已用 AI 配方生成' : 'SVG 插画失败，已用可编辑配方生成') : 'DeepSeek';
             setAiStatus({
               state: 'used',
-              message: svgArtworkFallbackDiagnostics ? `SVG 插画校验失败，已使用可编辑配方模式。` : `DeepSeek 已解析为 ${aiResult.intent.type}。`
+              message: svgArtworkDiagnosticsMessage(svgArtworkFallbackDiagnostics) ?? `DeepSeek 已解析为 ${aiResult.intent.type}。`
             });
           } else {
-          aiHistoryLabel = '本地回退';
-          setAiStatus({
-            state: 'fallback',
-            message: aiResult.reason
-          });
-          if (creativeAiCandidate) {
-            const localCreativeIntent = createLocalCreativeAssetIntent(transcript.text);
-            if (localCreativeIntent) {
-              const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
-              executionScene = latestScene;
-              plan = planCommands(localCreativeIntent, latestScene);
-              if (plan.layoutDiagnostics) {
-                plan = {
-                  ...plan,
-                  layoutDiagnostics: {
-                    ...plan.layoutDiagnostics,
-                    schemaVersion: 'local',
-                    rawSummary: `${localCreativeIntent.type}:${localCreativeIntent.name ?? '素材'}, recipe ${localCreativeIntent.recipe?.length ?? 0}`,
-                    transcript: transcript.text
-                  },
-                  svgArtworkDiagnostics: svgArtworkFallbackDiagnostics
-                };
-              } else if (svgArtworkFallbackDiagnostics) {
-                plan = { ...plan, svgArtworkDiagnostics: svgArtworkFallbackDiagnostics };
-              }
-              aiHistoryLabel = '本地素材配方';
-              setAiStatus({
-                state: 'fallback',
-                message: `DeepSeek 暂不可用，已使用本地安全素材配方：${localCreativeIntent.name ?? '素材'}。`
-              });
-              pushWorkflowEvent('使用本地素材配方', `AI 暂不可用，已生成 ${localCreativeIntent.name ?? '素材'}。`, 'warning');
-            } else {
-              plan = {
-                commands: [],
-                message: `AI 创作服务暂时不可用：${aiResult.reason}`,
-                needsClarification: true,
-                svgArtworkDiagnostics: svgArtworkFallbackDiagnostics
-              };
-            }
+            aiHistoryLabel = 'AI 未接管';
+            setAiStatus({
+              state: 'fallback',
+              message: aiResult.reason
+            });
+            plan = {
+              commands: [],
+              message: `AI 创作服务暂时不可用：${aiResult.reason}`,
+              needsClarification: true,
+              svgArtworkDiagnostics: svgArtworkFallbackDiagnostics
+            };
           }
-        }
         }
       } else {
         setAiStatus({
@@ -2290,7 +2286,12 @@ const AiLayoutDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionResu
 
 const SvgArtworkDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionResult['svgArtworkDiagnostics'] }) => {
   if (!diagnostics) return null;
-  const didNotReachSanitizer = diagnostics.sanitizerStatus === 'fallback' && diagnostics.safeMarkupLength === 0 && diagnostics.sanitizedElementCount === 0;
+  const fallbackReason = diagnostics.fallbackReason ?? '';
+  const didNotReceiveSvg =
+    diagnostics.sanitizerStatus === 'fallback' &&
+    diagnostics.safeMarkupLength === 0 &&
+    diagnostics.sanitizedElementCount === 0 &&
+    /超时|未配置|没有返回|请求失败|服务返回|结构校验|不可用|base URL|仍在生成|优先使用/i.test(fallbackReason);
   const statusLabel =
     diagnostics.sanitizerStatus === 'accepted'
       ? '已通过'
@@ -2324,8 +2325,10 @@ const SvgArtworkDiagnosticsBlock = ({ diagnostics }: { diagnostics?: ExecutionRe
       <div className="svg-diagnostics-copy">
         <p>{diagnostics.fallbackReason ?? diagnostics.qualityNotes ?? 'AI SVG 已清洗后进入画布，导出时只使用安全内容。'}</p>
         <small>
-          {didNotReachSanitizer
+          {didNotReceiveSvg
             ? '未收到可清洗的 SVG，未进入标签清洗统计。'
+            : diagnostics.safeMarkupLength === 0 && diagnostics.sanitizerStatus !== 'accepted'
+              ? '已收到 SVG，但安全校验拒绝生成可渲染内容。'
             : `丢弃标签 ${diagnostics.droppedElementCount} · 丢弃属性 ${diagnostics.droppedAttributeCount} · 安全字符 ${diagnostics.safeMarkupLength}`}
         </small>
       </div>
@@ -3058,6 +3061,13 @@ const humanAiMessage = (status: AiResolutionStatus) => {
   return status.message;
 };
 
+const svgArtworkDiagnosticsMessage = (diagnostics?: SvgArtworkDiagnostics) => {
+  if (!diagnostics) return null;
+  const reason = diagnostics.fallbackReason ?? '';
+  if (/仍在生成|优先使用/.test(reason)) return 'SVG 插画生成较慢，已优先使用 AI 可编辑配方。';
+  return 'SVG 插画校验失败，已使用 AI 可编辑配方模式。';
+};
+
 const detectStatusPanelCommand = (text: string): 'open' | 'close' | null => {
   if (/(打开|显示|展开|看看|调出).*(状态信息|状态面板|工作流状态|诊断|环境信息)/.test(text)) return 'open';
   if (/(关闭|收起|隐藏).*(状态信息|状态面板|工作流状态|诊断|环境信息)/.test(text)) return 'close';
@@ -3132,34 +3142,6 @@ const createSvgFallbackDiagnostics = (transcript: string, reason: string): SvgAr
   fallbackReason: reason,
   warnings: [reason]
 });
-
-const createLocalCreativeAssetIntent = (text: string): DrawingIntent | null => {
-  if (/(猫|小猫|小花猫|戴帽子的猫|戴帽子的小猫)/.test(text)) {
-    const withHat = /(帽子|戴帽|红帽|礼帽)/.test(text);
-    const recipe: DrawingRecipeItem[] = [
-      { shape: 'circle', name: '小猫脸', partName: '脸', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, slot: 'center', size: 'large', position: { x: 370, y: 228 }, width: 158, height: 136 },
-      { shape: 'triangle', name: '小猫左耳', partName: '耳朵', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, slot: 'top-left', relativeTo: '脸', size: 'small', position: { x: 376, y: 188 }, width: 58, height: 70 },
-      { shape: 'triangle', name: '小猫右耳', partName: '耳朵', color: '#f8fafc', strokeColor: '#111827', strokeWidth: 4, slot: 'top-right', relativeTo: '脸', size: 'small', position: { x: 465, y: 188 }, width: 58, height: 70 },
-      { shape: 'circle', name: '小猫左眼', partName: '眼睛', color: '#111827', strokeColor: '#111827', strokeWidth: 2, slot: 'left', relativeTo: '脸', size: 'tiny', position: { x: 416, y: 274 }, width: 18, height: 18 },
-      { shape: 'circle', name: '小猫右眼', partName: '眼睛', color: '#111827', strokeColor: '#111827', strokeWidth: 2, slot: 'right', relativeTo: '脸', size: 'tiny', position: { x: 462, y: 274 }, width: 18, height: 18 },
-      { shape: 'triangle', name: '小猫鼻子', partName: '鼻子', color: '#ec4899', strokeColor: '#111827', strokeWidth: 2, slot: 'bottom', relativeTo: '脸', size: 'tiny', position: { x: 438, y: 300 }, width: 22, height: 18 }
-    ];
-    if (withHat) {
-      recipe.push(
-        { shape: 'rectangle', name: '小猫帽檐', partName: '帽子', color: '#ef4444', strokeColor: '#111827', strokeWidth: 3, slot: 'top', relativeTo: '脸', size: 'small', offset: { x: 0, y: 0.16 }, position: { x: 393, y: 204 }, width: 112, height: 26 },
-        { shape: 'rectangle', name: '小猫帽子', partName: '帽子', color: '#ef4444', strokeColor: '#111827', strokeWidth: 3, slot: 'top', relativeTo: '脸', size: 'small', offset: { x: 0, y: -0.42 }, position: { x: 418, y: 164 }, width: 64, height: 48 }
-      );
-    }
-    return {
-      type: 'create_asset_recipe',
-      rawText: text,
-      name: withHat ? '戴帽子的小猫' : '小猫',
-      recipe
-    };
-  }
-
-  return null;
-};
 
 const workflowLabelForDiagnostics = (
   diagnostics: SpeechDiagnostics,

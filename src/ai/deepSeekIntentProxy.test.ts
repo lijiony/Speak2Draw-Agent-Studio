@@ -14,7 +14,7 @@ const payload: AiIntentRequestPayload = {
 };
 
 describe('deepSeekIntentProxy', () => {
-  it('未配置密钥时直接返回本地回退', async () => {
+  it('未配置密钥时直接返回 AI 未接管原因', async () => {
     const fetchMock = vi.fn();
     const result = await resolveDeepSeekIntent(payload, {}, fetchMock as unknown as typeof fetch);
 
@@ -161,7 +161,7 @@ describe('deepSeekIntentProxy', () => {
     expect(result).toEqual({
       ok: false,
       provider: 'deepseek',
-      reason: 'DeepSeek SVG 插画生成超时；连接测试只验证接口连通性，已回退到可编辑配方模式。'
+      reason: 'DeepSeek SVG 插画生成超时；连接测试只验证接口连通性，已优先使用 AI 可编辑配方模式。'
     });
   });
 

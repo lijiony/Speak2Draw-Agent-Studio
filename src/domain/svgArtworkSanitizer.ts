@@ -153,14 +153,6 @@ export const sanitizeSvgArtwork = (payload: SvgArtworkPayload, transcript?: stri
     };
   }
 
-  if (containsUnsafeUrl(payload.svg) || /\s(?:href|xlink:href|src)\s*=/i.test(payload.svg)) {
-    return {
-      ok: false,
-      reason: 'SVG 包含外链或不安全 URL。',
-      diagnostics: baseDiagnostics('rejected', { fallbackReason: 'SVG 包含外链或不安全 URL。' })
-    };
-  }
-
   const parser = createDomParser();
   if (!parser) {
     return {
@@ -343,6 +335,7 @@ const sanitizeNode = (
     const value = attribute.value.trim();
     if (!isSafeAttribute(name, value)) {
       counters.droppedAttributes += 1;
+      if (URL_ATTRIBUTE_NAMES.has(name) || containsUnsafeUrl(value)) pushUniqueWarning(warnings, `已移除不安全 URL 属性：${name}`);
       continue;
     }
     safeElement.setAttribute(name, sanitizeAttributeValue(name, value));
@@ -421,6 +414,10 @@ const isFiniteNumber = (value: string, min: number, max: number) => {
 const containsUnsafeUrl = (value: string) => {
   const normalized = value.toLowerCase().replace(/\s+/g, '');
   return /javascript:|data:|blob:|file:|https?:|url\((?!#[a-z0-9_-]+\))/i.test(normalized);
+};
+
+const pushUniqueWarning = (warnings: string[], warning: string) => {
+  if (!warnings.includes(warning)) warnings.push(warning);
 };
 
 const collectElementIds = (element: Element): string[] => {

@@ -51,8 +51,17 @@ describe('svgArtworkSanitizer', () => {
     expect(result.diagnostics.droppedAttributeCount).toBeGreaterThan(0);
   });
 
-  it('拒绝外链和异常 viewBox', () => {
-    expect(sanitizeSvgArtwork(payload('<svg viewBox="0 0 960 600"><g id="cat-hat" data-part-name="帽子"><rect x="1" y="1" width="80" height="40" fill="url(http://evil)"/></g></svg>')).ok).toBe(false);
+  it('移除不安全 URL 属性但保留可清洗 SVG', () => {
+    const result = sanitizeSvgArtwork(payload('<svg viewBox="0 0 960 600"><g id="cat-hat" data-part-name="帽子"><rect x="1" y="1" width="80" height="40" fill="url(http://evil)"/></g></svg>'));
+
+    expect(result.ok).toBe(true);
+    expect(result.artwork?.safeMarkup).toContain('cat-hat');
+    expect(result.artwork?.safeMarkup).not.toContain('http://evil');
+    expect(result.diagnostics.droppedAttributeCount).toBeGreaterThan(0);
+    expect(result.diagnostics.warnings).toContain('已移除不安全 URL 属性：fill');
+  });
+
+  it('拒绝异常 viewBox', () => {
     expect(sanitizeSvgArtwork({ ...payload('<svg viewBox="0 0 960 600"></svg>'), viewBox: '0 0 999999 600' }).ok).toBe(false);
   });
 

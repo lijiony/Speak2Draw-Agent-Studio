@@ -159,7 +159,7 @@ export const resolveDeepSeekSvgArtwork = async (
   } catch (error) {
     const reason =
       error instanceof Error && error.name === 'AbortError'
-        ? 'DeepSeek SVG 插画生成超时；连接测试只验证接口连通性，已回退到可编辑配方模式。'
+        ? 'DeepSeek SVG 插画生成超时；连接测试只验证接口连通性，已优先使用 AI 可编辑配方模式。'
         : 'AI SVG 插画请求失败。';
     return { ok: false, provider: 'deepseek', reason };
   } finally {

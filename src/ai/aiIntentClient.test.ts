@@ -59,7 +59,7 @@ describe('aiIntentClient', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason).toContain('回退到本地规则');
+      expect(result.reason).toContain('已保持当前画布');
     }
   });
 

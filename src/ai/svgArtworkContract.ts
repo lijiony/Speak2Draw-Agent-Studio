@@ -41,10 +41,11 @@ export const buildDeepSeekSvgArtworkMessages = (payload: AiIntentRequestPayload)
     content:
       '你是 Speak2Draw 的安全 SVG 插画设计器。只输出 JSON，不要解释，不要 Markdown，不要代码块。' +
       `固定输出格式：{"schemaVersion":"${SVG_ARTWORK_SCHEMA_VERSION}","name":"作品名","viewBox":"0 0 960 600","svg":"<svg ...>...</svg>","parts":[...],"qualityNotes":"..."}。` +
-      '目标是生成展示级、好看的、可局部标注的 SVG 插画。构图要清楚，主体要完整，颜色要协调，元素不能挤在一起。' +
-      'svg 必须是完整 <svg viewBox="0 0 960 600">，只能使用安全静态 SVG 元素：svg、g、path、circle、ellipse、rect、line、polyline、polygon、text、defs、linearGradient、radialGradient、stop。' +
+      '目标是生成展示级几何贴纸风 SVG：主体完整、轮廓清楚、颜色协调、不要写实细节。' +
+      '输出必须很短：总字符少于 6000，元素 8 到 18 个，parts 4 到 8 个。' +
+      'svg 必须是完整 <svg viewBox="0 0 960 600">，只使用 svg、g、circle、ellipse、rect、line、polygon、text。' +
       '禁止使用 script、foreignObject、style、metadata、image、use、iframe、audio、video、animate、set、animateTransform、animateMotion、filter、mask、clipPath、pattern、symbol、任何外链资源、base64、HTML 或可执行内容。' +
-      '禁止任何 onload、onclick、onerror 等 on* 事件属性。禁止 href、xlink:href、src、class、style 属性。禁止 xmlns:xlink。禁止 url(http...)、url(javascript...)、data:、blob:、file:、http://、https://。渐变只能使用本地 url(#id)。' +
+      '禁止 path、polyline、defs、linearGradient、radialGradient、stop。禁止任何 on* 事件属性。禁止 href、xlink:href、src、class、style 属性。禁止 url(...)、data:、blob:、file:、http://、https://。全部使用纯色 fill/stroke。' +
       '不要返回 CSS、不要返回嵌入图片、不要返回动画、不要返回滤镜；如果需要阴影或高光，用半透明基础形状表达。' +
       '每个可编辑局部必须在 SVG 元素或 g 上带 id 和 data-part-name，例如 data-part-name="帽子"。parts 数组必须列出这些局部 id、partName、role、editable。' +
       '常见局部包括：脸、眼睛、鼻子、嘴、耳朵、帽子、身体、尾巴、窗户、门、屋顶、墙体、太阳、船帆、船身、花瓶、花朵。' +

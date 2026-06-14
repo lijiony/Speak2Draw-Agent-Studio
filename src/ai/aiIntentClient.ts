@@ -74,7 +74,7 @@ export const resolveAiIntent = async (
     return {
       ok: false,
       provider: 'deepseek',
-      reason: 'AI 指令解析暂时不可用，已回退到本地规则。'
+      reason: 'AI 指令解析暂时不可用，已保持当前画布。'
     };
   }
 };
