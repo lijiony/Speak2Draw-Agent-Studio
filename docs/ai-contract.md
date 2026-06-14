@@ -2,7 +2,7 @@
 
 ## 目标
 
-本文档记录 Speak2Draw-Agent-Studio 与 DeepSeek 的交互契约。AI 只负责把中文语音文本转换为结构化绘图意图，不能直接修改 DOM、不能执行任意代码、不能返回任意 SVG/HTML。所有 AI 输出都必须回到本地白名单绘图引擎执行。
+本文档记录 Speak2Draw-Agent-Studio 与 DeepSeek 的交互契约。AI 负责把中文语音文本转换为结构化绘图意图，或在安全 SVG 插画模式下生成完整 SVG 插画。AI 不能直接修改 DOM、不能执行任意代码；所有输出都必须回到本地校验、布局或 SVG 安全清洗链路后才允许进入画布。
 
 ## 本地配置
 
@@ -131,13 +131,20 @@ Content-Type: application/json
 }
 ```
 
+## 生图模式
+
+当前支持两种 AI 生图模式：
+
+- `editable-recipe`：默认模式。DeepSeek 返回可编辑 JSON 意图或素材配方，本地布局引擎负责换算坐标，适合局部编辑、撤销重做和稳定演示。
+- `safe-svg-artwork`：插画模式。DeepSeek 返回完整 SVG 插画包，本地 SVG sanitizer 负责过滤危险标签、属性和外链，适合生成更完整的展示型画面。
+
 ## DeepSeek 输出格式
 
-DeepSeek 必须优先返回包裹格式：
+可编辑配方模式优先返回包裹格式：
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "intent": {
     "type": "create_shape",
     "shape": "circle",
@@ -146,7 +153,29 @@ DeepSeek 必须优先返回包裹格式：
 }
 ```
 
-当前兼容裸 `DrawingIntent`，但提示词和文档都以包裹格式为准。
+当前兼容 `schemaVersion: "1.0"` 和裸 `DrawingIntent`，但提示词和文档都以包裹格式为准。
+
+安全 SVG 插画模式必须返回：
+
+```json
+{
+  "schemaVersion": "svg-artwork-1.0",
+  "name": "戴帽子的狗",
+  "viewBox": "0 0 960 600",
+  "svg": "<svg viewBox=\"0 0 960 600\">...</svg>",
+  "parts": [
+    {
+      "id": "dog-hat",
+      "partName": "帽子",
+      "role": "accessory",
+      "editable": true
+    }
+  ],
+  "qualityNotes": "中心构图，主体清晰。"
+}
+```
+
+插画模式下，用户原话会作为 `originalTranscript` 传给模型，固定要求会放在 `svgRequirements` 字段中。模型必须以原话作为唯一语义来源，不应把本地关键词映射结果当成用户意图。
 
 ## 支持的 Intent
 
@@ -424,7 +453,8 @@ DeepSeek 必须优先返回包裹格式：
 - `sequence` 中混入 `unknown` 或 `clarify`。
 - 空 `recipe`。
 - 超出限制的尺寸、线宽、缩放比例。
-- 任意 SVG、HTML、脚本或 path 类自由绘制内容。
+- 可编辑配方模式中的任意 SVG、HTML、脚本或 path 类自由绘制内容。
+- SVG 插画模式中的 `script`、`foreignObject`、`iframe`、`audio`、`video`、`image`、`use`、事件属性、外链 URL、超大 SVG、超长 path 或异常 viewBox。
 
 ## 代理失败返回
 
