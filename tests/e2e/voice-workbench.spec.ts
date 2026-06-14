@@ -845,7 +845,7 @@ test('安全 SVG 插画模式可以生成、局部编辑并安全导出', async 
     groupName: '戴帽子的小猫'
   });
   expect(scene?.objects[0].svgArtwork?.parts.map((part) => part.partName)).toEqual(['脸', '帽子']);
-  expect(aiRequests.map((request) => request.generationMode)).toEqual(expect.arrayContaining(['safe-svg-artwork', 'editable-recipe']));
+  expect(aiRequests.map((request) => request.generationMode)).toEqual(['safe-svg-artwork']);
 
   await submitVoiceText(page, '打开状态信息');
   const statusDialog = page.getByRole('dialog', { name: '状态信息' });
@@ -946,7 +946,7 @@ test('SVG 插画包含不安全属性时会清洗后继续生成', async ({ page
 
   await submitVoiceText(page, '画一只戴帽子的猫');
   await expect(systemFeedback(page)).toContainText('已生成安全 SVG 插画');
-  expect(requestModes).toEqual(expect.arrayContaining(['safe-svg-artwork', 'editable-recipe']));
+  expect(requestModes).toEqual(['safe-svg-artwork']);
   const scene = await page.evaluate(() => window.__speak2drawTest?.getScene());
   expect(scene?.objects.map((object) => object.kind)).toEqual(['svg_artwork']);
   expect(scene?.objects[0].svgArtwork?.safeMarkup).toContain('cat-hat');

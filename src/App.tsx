@@ -574,7 +574,6 @@ export const App = () => {
         });
         updateVoiceRuntime({ phase: 'processing', recentEvent: aiGeneratingMessage, lastError: null });
         let svgArtworkHandled = false;
-        let aiResultFromParallel: Awaited<ReturnType<typeof resolveAiIntent>> | null = null;
         const applySvgArtworkResult = (svgResult: Awaited<ReturnType<typeof resolveAiSvgArtwork>>) => {
           if (svgResult.ok) {
             const sanitizeResult = sanitizeSvgArtwork(svgResult.artwork, transcript.text);
@@ -613,37 +612,25 @@ export const App = () => {
           return false;
         };
         if (wantsSvgArtwork) {
-          const svgArtworkPromise = resolveAiSvgArtwork(transcript, executionScene, aiReason, undefined, getAiRequestOptions('safe-svg-artwork'));
-          const aiIntentPromise = resolveAiIntent(transcript, executionScene, aiReason, undefined, getAiRequestOptions('editable-recipe'));
-          const firstAiResult = await Promise.race([
-            svgArtworkPromise.then((result) => ({ mode: 'svg' as const, result })),
-            aiIntentPromise.then((result) => ({ mode: 'recipe' as const, result }))
-          ]);
-
-          if (firstAiResult.mode === 'svg') {
-            svgArtworkHandled = applySvgArtworkResult(firstAiResult.result);
-            if (!svgArtworkHandled) aiResultFromParallel = await aiIntentPromise;
-          } else {
-            aiResultFromParallel = firstAiResult.result;
-            if (aiResultFromParallel.ok) {
-              svgArtworkFallbackDiagnostics = createSvgFallbackDiagnostics(transcript.text, 'SVG 插画仍在生成，已优先使用 AI 可编辑配方。');
-              void svgArtworkPromise.then(() => undefined);
-            } else {
-              svgArtworkHandled = applySvgArtworkResult(await svgArtworkPromise);
-            }
+          svgArtworkHandled = applySvgArtworkResult(await resolveAiSvgArtwork(transcript, executionScene, aiReason, undefined, getAiRequestOptions('safe-svg-artwork')));
+          if (!svgArtworkHandled) {
+            const fallbackMessage = 'SVG 插画没有生成成功，正在请求 AI 可编辑配方。';
+            pushWorkflowEvent('AI 可编辑配方接管', fallbackMessage, 'warning');
+            setAiStatus({
+              state: 'checking',
+              message: fallbackMessage
+            });
           }
         }
 
         if (!svgArtworkHandled) {
-          const aiResult =
-            aiResultFromParallel ??
-            (await resolveAiIntent(
-              transcript,
-              executionScene,
-              aiReason,
-              activeClarification ?? undefined,
-              getAiRequestOptions('editable-recipe')
-            ));
+          const aiResult = await resolveAiIntent(
+            transcript,
+            executionScene,
+            aiReason,
+            activeClarification ?? undefined,
+            getAiRequestOptions('editable-recipe')
+          );
           if (aiResult.ok) {
             const latestScene = sceneRef.current.revision === executionScene.revision ? executionScene : sceneRef.current;
             executionScene = latestScene;
@@ -3064,7 +3051,7 @@ const humanAiMessage = (status: AiResolutionStatus) => {
 const svgArtworkDiagnosticsMessage = (diagnostics?: SvgArtworkDiagnostics) => {
   if (!diagnostics) return null;
   const reason = diagnostics.fallbackReason ?? '';
-  if (/仍在生成|优先使用/.test(reason)) return 'SVG 插画生成较慢，已优先使用 AI 可编辑配方。';
+  if (/仍在生成|优先使用|较慢|超时/.test(reason)) return 'SVG 插画生成较慢，已优先使用 AI 可编辑配方。';
   return 'SVG 插画校验失败，已使用 AI 可编辑配方模式。';
 };
 

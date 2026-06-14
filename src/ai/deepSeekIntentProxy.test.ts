@@ -91,9 +91,11 @@ describe('deepSeekIntentProxy', () => {
 
   it('安全 SVG 插画模式调用独立提示词并解析 artwork 合同', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      const body = JSON.parse(init?.body as string) as { messages: Array<{ content: string }> };
-      expect(body.messages[0].content).toContain('安全 SVG 插画设计器');
-      expect(body.messages[0].content).toContain('禁止使用 script');
+      const body = JSON.parse(init?.body as string) as { messages: Array<{ content: string }>; response_format?: { type: string }; max_tokens?: number };
+      expect(body.messages[0].content).toContain('SVG element list');
+      expect(body.messages[0].content).toContain('elements');
+      expect(body.response_format).toEqual({ type: 'json_object' });
+      expect(body.max_tokens).toBe(3000);
       return new Response(
         JSON.stringify({
           choices: [
@@ -103,7 +105,15 @@ describe('deepSeekIntentProxy', () => {
                   schemaVersion: 'svg-artwork-1.0',
                   name: '戴帽子的小猫',
                   viewBox: '0 0 960 600',
-                  svg: '<svg viewBox="0 0 960 600"><g id="cat-hat" data-part-name="帽子"><rect x="420" y="120" width="120" height="70" fill="#2563eb"/></g></svg>',
+                  elements: [
+                    {
+                      tag: 'rect',
+                      id: 'cat-hat',
+                      partName: '帽子',
+                      role: 'accessory',
+                      attrs: { x: 420, y: 120, width: 120, height: 70, fill: '#2563eb' }
+                    }
+                  ],
                   parts: [{ id: 'cat-hat', partName: '帽子', role: 'accessory', editable: true }],
                   qualityNotes: '主体居中。'
                 })

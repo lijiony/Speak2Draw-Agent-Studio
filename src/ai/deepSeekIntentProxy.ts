@@ -125,37 +125,49 @@ export const resolveDeepSeekSvgArtwork = async (
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const upstream = await fetchImpl(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+    let lastReason = 'DeepSeek 没有返回可解析内容。';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const upstream = await fetchImpl(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          messages: buildDeepSeekSvgArtworkMessages(payload),
+          temperature: 0,
+          max_tokens: 3000,
+          response_format: { type: 'json_object' }
+        })
+      });
+
+      if (!upstream.ok) return { ok: false, provider: 'deepseek', reason: `DeepSeek 返回 ${upstream.status}。` };
+
+      const data = (await upstream.json()) as DeepSeekChatResponse;
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        lastReason = 'DeepSeek 没有返回可解析内容。';
+        continue;
+      }
+
+      const artwork = parseDeepSeekSvgArtworkContent(content);
+      if (!artwork) {
+        lastReason = 'DeepSeek SVG 插画未通过结构校验。';
+        continue;
+      }
+
+      return {
+        ok: true,
+        provider: 'deepseek',
         model,
-        messages: buildDeepSeekSvgArtworkMessages(payload),
-        temperature: 0.2
-      })
-    });
-
-    if (!upstream.ok) return { ok: false, provider: 'deepseek', reason: `DeepSeek 返回 ${upstream.status}。` };
-
-    const data = (await upstream.json()) as DeepSeekChatResponse;
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) return { ok: false, provider: 'deepseek', reason: 'DeepSeek 没有返回可解析内容。' };
-
-    const artwork = parseDeepSeekSvgArtworkContent(content);
-    if (!artwork) return { ok: false, provider: 'deepseek', reason: 'DeepSeek SVG 插画未通过结构校验。' };
-
-    return {
-      ok: true,
-      provider: 'deepseek',
-      model,
-      artwork,
-      schemaVersion: SVG_ARTWORK_SCHEMA_VERSION,
-      rawIntentSummary: summarizeDeepSeekSvgArtworkContent(content)
-    };
+        artwork,
+        schemaVersion: SVG_ARTWORK_SCHEMA_VERSION,
+        rawIntentSummary: summarizeDeepSeekSvgArtworkContent(content)
+      };
+    }
+    return { ok: false, provider: 'deepseek', reason: lastReason };
   } catch (error) {
     const reason =
       error instanceof Error && error.name === 'AbortError'
