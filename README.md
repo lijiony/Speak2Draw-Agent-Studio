@@ -1,5 +1,5 @@
 # Speak2Draw-Agent-Studio
-设计文档：[docs/design.md](docs/design.md)｜视频链接：｜演示项目链接：
+设计文档：[docs/design.md](docs/design.md)｜视频链接：｜演示项目链接：[https://speak2draw-agent-studio.netlify.app](https://speak2draw-agent-studio.netlify.app)
 
 一个面向“AI 语音绘图工具”议题的项目。用户通过语音指令完成绘图创作，项目重点关注语音指令理解、绘图操作执行、容错处理、响应延迟和复杂指令拆解。
 
@@ -123,11 +123,3 @@ npm run test:e2e
 
 端到端测试会启动本地 Vite 服务，并通过 `?e2e=1` 的测试入口模拟浏览器返回的语音文本，用来验证从语音文本到画布更新的完整链路。
 
-## 开发规则
-
-- 所有开发必须基于 Git 记录推进。
-- 新功能必须通过独立分支和 PR 添加。
-- 每个 PR 只做一件事。
-- PR 描述必须包含标题、功能描述、实现思路、测试方式。
-- main 分支必须始终保持可运行状态。
-- 不要提交 `.env`、token、密钥、账号密码等敏感信息。
