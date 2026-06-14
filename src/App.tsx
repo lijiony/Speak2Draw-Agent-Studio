@@ -1027,49 +1027,50 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
   const [activeFlowIndex, setActiveFlowIndex] = useState<number | null>(null);
   const [pinnedFlowIndex, setPinnedFlowIndex] = useState<number | null>(null);
   const title = Array.from('AI 语音绘图工具');
+  const highlights = ['纯语音控制', '原话驱动 AI', '安全 SVG 插画', '局部可编辑'];
   const infoColumns = [
     {
       icon: <Radio size={15} />,
       title: '说出想法',
       detail: '从一句中文语音开始，不需要鼠标或键盘。',
-      what: '浏览器麦克风持续收音，把用户说的完整句子整理成可解析文本，例如“画一个戴帽子的小猫”。',
-      why: '纯语音绘图最怕半句话就执行。系统会等待最终识别结果，并把未听清、低置信度和超时状态单独反馈。',
+      what: '浏览器麦克风持续收音，把用户说出的完整想法整理成可解析文本，例如“画一个戴帽子的狗”。',
+      why: '纯语音绘图最怕半句话就执行。系统会等待端点稳定，并把未听清、低置信度和超时状态单独反馈。',
       proof: '已实现麦克风测试、收音波形、端点策略、无清晰语音提示和语音状态浮层。',
       example: '试试说：画一个红色圆形。'
     },
     {
       icon: <BrainCircuit size={15} />,
       title: '理解意图',
-      detail: '本地规则先判断，复杂或模糊请求再交给 AI。',
-      what: '系统会把语音文本识别为创建、选择、修改、删除、查询、撤销或导出等绘图意图。',
-      why: '把听到的话和真正要做的事分开，能减少“听见了但做错了”的风险。',
-      proof: 'AI 只返回受控 JSON 指令，不直接改画布；设置页可测试连接，也能关闭 AI 兜底。',
+      detail: '原话进入 AI，再用固定 JSON 合同约束输出。',
+      what: '系统会把 originalTranscript 和 SVG 生成要求一起交给 AI，让 AI 理解用户原话，而不是只依赖本地关键词映射。',
+      why: '把“听到的原话”和“可执行的绘图结构”分开，能减少听见了但画错、局部改错或返回不安全内容的风险。',
+      proof: 'AI 必须返回受控 JSON 指令；SVG 插画要经过本地安全清洗，设置页也能测试 AI 连接和切换生图模式。',
       example: '试试说：把帽子删掉，不好看。'
     },
     {
       icon: <Layers3 size={15} />,
       title: '拆解步骤',
-      detail: '把复杂创作拆成可回放、可撤销的绘图命令。',
-      what: '复杂对象会拆成素材组和局部部件，例如小猫包含脸、耳朵、眼睛、帽子。',
-      why: '用户后续要改局部时，系统能知道“帽子”和“整只小猫”的区别。',
-      proof: '已支持素材组选择、局部选择、删除帽子不删除小猫、复杂指令批量执行。',
+      detail: '把复杂创作拆成对象、部件和可撤销命令。',
+      what: '复杂对象会保留素材组和局部部件，例如狗可以包含脸、耳朵、眼睛、帽檐和帽冠。',
+      why: '用户后续要改局部时，系统能知道“帽子”和“整只小狗”的区别。',
+      proof: '已支持素材组选择、局部选择、删除帽子不删除主体、复杂指令批量执行。',
       example: '试试说：选择房子的窗户。'
     },
     {
       icon: <CheckCircle2 size={15} />,
       title: '执行反馈',
       detail: '画布更新、历史记录和状态解释同步出现。',
-      what: '绘图命令会更新 SVG 场景模型，并记录执行结果、失败原因、撤销栈和语音反馈。',
-      why: '用户看不到底层操作，所以每一步都要告诉用户系统理解了什么、执行了什么。',
-      proof: '已实现撤销重做、清空导出、状态信息浮层、AI 状态说明和延迟指标。',
+      what: '绘图命令会更新 SVG 场景模型，并记录执行结果、失败原因、撤销栈、安全清洗状态和语音反馈。',
+      why: '用户看不到底层操作，所以每一步都要告诉用户系统理解了什么、执行了什么，以及 AI 是否正在生成。',
+      proof: '已实现撤销重做、清空导出、状态信息浮层、AI 状态说明、SVG 清洗诊断和延迟指标。',
       example: '试试说：打开状态信息。'
     }
   ];
   const visibleFlowIndex = previewOpen ? (pinnedFlowIndex ?? activeFlowIndex) : null;
   const visibleFlow = visibleFlowIndex === null ? null : infoColumns[visibleFlowIndex];
   const keywordRows = [
-    ['语音端点检测', '中文意图解析', '低置信度澄清', '复杂指令拆解', 'AI 安全兜底', '局部对象编辑', 'SVG 实时渲染', '撤销重做记录'],
-    ['戴帽子的小猫', '删除帽子', '选择房子窗户', '打开状态信息', '测试 AI 连接', '导出 SVG', '清空画布', '恢复画布模式']
+    ['语音端点检测', '原话驱动 AI', '低置信度澄清', '复杂指令拆解', '安全 SVG 插画', '局部对象编辑', 'SVG 安全清洗', '撤销重做记录'],
+    ['戴帽子的狗', '删除帽子', '选择房子窗户', '打开状态信息', '测试 AI 连接', '导出 SVG', '清空画布', '恢复画布模式']
   ];
   const closePreview = () => {
     setPreviewOpen(false);
@@ -1110,6 +1111,7 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
             </span>
           ))}
         </h1>
+        <p className="landing-subtitle">只用语音完成绘图创作，AI 理解原话并生成安全 SVG 插画。</p>
         <button className="landing-primary-button" type="button" onClick={onEnter}>
           <span>Speak2Draw-Agent-Studio</span>
           <strong>
@@ -1117,6 +1119,11 @@ const NavigationLanding = ({ onEnter }: { onEnter: () => void }) => {
             <ArrowRight size={16} />
           </strong>
         </button>
+        <ul className="landing-highlight-strip" aria-label="项目亮点">
+          {highlights.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
       </section>
 
       <section className="landing-keyword-stream" aria-hidden="true">
