@@ -17,13 +17,34 @@ describe('aiIntentContract', () => {
     });
     const payload = toAiIntentRequestPayload('让月亮更梦幻', scene, '本地规则无法理解', {
       originalTranscript: '把月亮改一下',
-      question: '需要说明改成什么样。'
-    });
+      question: '需要说明改成什么样。',
+      createdAt: 10,
+      expiresAt: 20
+    } as Parameters<typeof toAiIntentRequestPayload>[3] & { createdAt: number; expiresAt: number });
     const messages = buildDeepSeekMessages(payload);
 
-    expect(payload.scene.objects).toEqual([{ name: '月亮', groupName: '夜空', kind: 'circle', fill: '#2563eb' }]);
+    expect(payload.scene.objects[0]).toMatchObject({
+      id: 'shape-1',
+      name: '月亮',
+      groupId: 'asset-1',
+      groupName: '夜空',
+      kind: 'circle',
+      fill: '#2563eb'
+    });
+    expect(payload.scene.assets[0]).toMatchObject({
+      groupId: 'asset-1',
+      groupName: '夜空',
+      parts: [{ objectId: 'shape-1', name: '月亮' }]
+    });
+    expect(payload.scene.selection).toMatchObject({
+      scope: 'group',
+      groupId: 'asset-1',
+      name: '夜空'
+    });
     expect(payload.scene.selectedName).toBe('月亮');
     expect(payload.clarificationContext?.originalTranscript).toBe('把月亮改一下');
+    expect(JSON.stringify(payload.clarificationContext)).not.toContain('createdAt');
+    expect(JSON.stringify(payload.clarificationContext)).not.toContain('expiresAt');
     expect(messages[0].content).toContain('clarificationContext');
     expect(messages[0].content).toContain(`"schemaVersion":"${AI_INTENT_SCHEMA_VERSION}"`);
     expect(messages[0].content).toContain('rename_object');
@@ -31,6 +52,10 @@ describe('aiIntentContract', () => {
     expect(messages[0].content).toContain('update_text');
     expect(messages[0].content).toContain('align_objects');
     expect(messages[0].content).toContain('distribute_objects');
+    expect(messages[0].content).toContain('只输出符合 schema 的 JSON');
+    expect(messages[0].content).toContain('slot/relativeTo/size');
+    expect(messages[0].content).toContain('严禁返回 SVG path');
+    expect(messages[0].content).toContain('局部编辑不能误删或替换整组');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.create_shape).toContain('shape');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.rename_object).toContain('name');
     expect(AI_INTENT_JSON_SCHEMA.intentRequirements.update_text).toContain('text');
@@ -58,22 +83,159 @@ describe('aiIntentContract', () => {
     });
   });
 
+  it('把安全 SVG 插画的可编辑局部写入 AI 场景摘要', () => {
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('svg_artwork', {
+        id: 'svg-cat',
+        name: '戴帽子的小猫',
+        groupId: 'asset-svg-cat',
+        groupName: '戴帽子的小猫',
+        x: 96,
+        y: 48,
+        width: 768,
+        height: 504,
+        svgArtwork: {
+          name: '戴帽子的小猫',
+          viewBox: '0 0 960 600',
+          safeMarkup: '<g id="cat-hat" data-part-name="帽子"><rect x="420" y="120" width="120" height="70" fill="#2563eb"/></g>',
+          parts: [{ id: 'cat-hat', partName: '帽子', role: 'accessory', editable: true, bounds: { x: 420, y: 120, width: 120, height: 70 } }],
+          diagnostics: {
+            generationMode: 'safe-svg-artwork',
+            sanitizerStatus: 'accepted',
+            sanitizedElementCount: 2,
+            droppedElementCount: 0,
+            droppedAttributeCount: 0,
+            partCount: 1,
+            safeMarkupLength: 120,
+            warnings: []
+          }
+        }
+      })
+    });
+
+    const payload = toAiIntentRequestPayload('把帽子删掉', scene, '测试', undefined, 'safe-svg-artwork');
+
+    expect(payload.generationMode).toBe('safe-svg-artwork');
+    expect(payload.scene.assets[0]).toMatchObject({
+      groupId: 'asset-svg-cat',
+      groupName: '戴帽子的小猫',
+      parts: [{ objectId: 'svg-cat', partId: 'cat-hat', partName: '帽子', kind: 'svg_artwork' }]
+    });
+    expect(payload.scene.assets[0].parts[0].bounds.x).toBeGreaterThan(400);
+  });
+
+  it('兼容旧版 schema 包裹格式', () => {
+    const intent = parseDeepSeekIntentContent(
+      JSON.stringify({
+        schemaVersion: '1.0',
+        intent: {
+          type: 'create_asset_recipe',
+          name: '旧版猫',
+          recipe: [{ shape: 'circle', name: '猫脸', color: '#f9fafb', position: { x: 420, y: 220 } }]
+        }
+      }),
+      '画一只猫'
+    );
+
+    expect(intent).toMatchObject({
+      type: 'create_asset_recipe',
+      name: '旧版猫',
+      recipe: [{ shape: 'circle', name: '猫脸', position: { x: 420, y: 220 } }]
+    });
+  });
+
   it('解析并清洗 AI 返回的安全素材配方', () => {
     const intent = parseDeepSeekIntentContent(
-      '```json\n{"type":"create_asset_recipe","name":"猫","recipe":[{"shape":"circle","name":"猫脸","color":"#f9fafb","position":{"x":1200,"y":-20},"width":999,"height":10},{"shape":"path","name":"非法路径","color":"red"}]}\n```',
+      '```json\n{"schemaVersion":"2.0","intent":{"type":"create_asset_recipe","name":"猫","recipe":[{"shape":"circle","name":"猫脸","partName":"脸","color":"#f9fafb","slot":"center","relativeTo":"身体","offset":{"x":2,"y":-2},"size":"large","position":{"x":1200,"y":-20},"width":999,"height":10},{"shape":"path","name":"非法路径","color":"red"},{"shape":"rectangle","name":"坏槽位","slot":"middle","color":"red"}]}}\n```',
       '画一只猫'
     );
 
     expect(intent?.type).toBe('create_asset_recipe');
     expect(intent?.name).toBe('猫');
-    expect(intent?.recipe).toHaveLength(1);
+    expect(intent?.recipe).toHaveLength(2);
     expect(intent?.recipe?.[0]).toMatchObject({
       shape: 'circle',
       name: '猫脸',
+      partName: '脸',
       color: '#f9fafb',
+      slot: 'center',
+      relativeTo: '身体',
+      offset: { x: 1, y: -1 },
+      size: 'large',
       position: { x: 940, y: 0 },
       width: 420,
       height: 20
+    });
+    expect(intent?.recipe?.[1]).toMatchObject({
+      shape: 'rectangle',
+      name: '坏槽位'
+    });
+    expect(intent?.recipe?.[1].slot).toBeUndefined();
+    expect(intent?.recipe?.[1].color).toBeUndefined();
+  });
+
+  it('接受 AI 返回局部修改意图', () => {
+    const deleteIntent = normalizeAiIntent(
+      {
+        type: 'revise_asset_part',
+        operation: 'delete',
+        selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫', scope: 'part' }
+      },
+      '把帽子删去'
+    );
+
+    const replaceIntent = normalizeAiIntent(
+      {
+        type: 'revise_asset_part',
+        operation: 'replace',
+        selector: { mode: 'by_id', objectId: 'shape-8', scope: 'part' },
+        attachTo: { mode: 'by_group_id', groupId: 'asset-cat', scope: 'group' },
+        recipe: [{ shape: 'rectangle', name: '蓝色帽檐', partName: '帽子', color: '#2563eb' }]
+      },
+      '帽子不好看换一个'
+    );
+
+    expect(deleteIntent).toMatchObject({
+      type: 'revise_asset_part',
+      operation: 'delete',
+      selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫', scope: 'part' }
+    });
+    expect(replaceIntent).toMatchObject({
+      type: 'revise_asset_part',
+      operation: 'replace',
+      selector: { mode: 'by_id', objectId: 'shape-8', scope: 'part' },
+      attachTo: { mode: 'by_group_id', groupId: 'asset-cat', scope: 'group' },
+      recipe: [{ partName: '帽子' }]
+    });
+  });
+
+  it('兼容 AI 在局部修改中使用 partName 字段和隐式替换操作', () => {
+    const intent = normalizeAiIntent(
+      {
+        type: 'revise_asset_part',
+        targetPartName: '帽子',
+        groupName: '小猫',
+        recipe: [
+          {
+            shape: 'rectangle',
+            name: '蓝帽檐',
+            partName: '帽子',
+            color: '#2563eb',
+            slot: 'top',
+            relativeTo: '脸',
+            size: 'small'
+          }
+        ]
+      },
+      '给猫换一顶蓝帽子'
+    );
+
+    expect(intent).toMatchObject({
+      type: 'revise_asset_part',
+      operation: 'replace',
+      selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫', scope: 'part' },
+      recipe: [{ name: '蓝帽檐', slot: 'top', relativeTo: '脸' }]
     });
   });
 

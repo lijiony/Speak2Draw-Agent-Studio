@@ -1,8 +1,9 @@
 # Speak2Draw-Agent-Studio
+设计文档：[docs/design.md](docs/design.md)｜视频链接：｜演示项目链接：
 
 一个面向“AI 语音绘图工具”议题的项目。用户通过语音指令完成绘图创作，项目重点关注语音指令理解、绘图操作执行、容错处理、响应延迟和复杂指令拆解。
 
-当前目标是开发一款纯语音控制的 AI 绘图工具：用户只通过语音表达创作意图，系统优先用本地规则快速执行明确指令；当本地规则无法理解时，通过 DeepSeek 进行自然语言理解、纠错、澄清、复杂场景拆解和缺失元素的安全矢量配方生成，再由本地白名单绘图引擎执行。
+当前目标是开发一款纯语音控制的 AI 绘图工具：用户只通过语音表达创作意图，系统优先用本地规则快速执行明确指令；当本地规则无法理解时，通过 DeepSeek 进行自然语言理解、纠错、澄清、复杂场景拆解、可编辑配方生成和安全 SVG 插画生成，再由本地校验、布局和清洗链路执行。
 
 当前项目通过持续 commit、分支和 PR 的方式推进，避免最后一次性提交全部代码。
 
@@ -17,38 +18,42 @@ npm run dev
 
 ## AI 配置
 
-DeepSeek 只在本地规则无法明确执行时作为智能兜底使用，API Key 只由 Vite 本地代理读取，不会进入浏览器打包产物。
+DeepSeek 用于自然语言理解、复杂指令拆解、可编辑素材配方和安全 SVG 插画生成。推荐方式是把 API Key 放在本地 `.env` 或 Netlify 环境变量中，由同源代理读取；设置页也支持临时粘贴“本次会话密钥”，该密钥只保存在当前标签页内存中，通过同源请求头发送给代理，不写入 localStorage、执行记录或仓库文件。
 
 ```bash
-copy .env.example .env.local
+copy .env.example .env
 ```
 
-然后在 `.env.local` 中填写：
+然后在 `.env` 中填写：
 
 ```bash
 DEEPSEEK_API_KEY=你的本地密钥
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
-DEEPSEEK_TIMEOUT_MS=8000
+DEEPSEEK_TIMEOUT_MS=15000
 ```
 
-不要提交 `.env.local`、token、密钥或账号密码。
+不要提交 `.env`、token、密钥或账号密码。
 
 生产部署到 Netlify 时，在站点环境变量中配置同名的 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 和 `DEEPSEEK_TIMEOUT_MS`。项目已提供 `netlify.toml` 和 `/api/ai/intent` Netlify Function，生产环境同样由服务端函数持有 DeepSeek API Key。
 
-页面右侧会显示“AI 解析”状态：明确指令会显示本地规则处理；自然语言兜底成功会显示 DeepSeek 解析出的意图类型；未配置、超时或返回不安全内容时会显示回退原因，并保留本地澄清反馈。
+状态信息浮层会显示 AI 解析状态：明确指令会显示本地规则处理；自然语言或 SVG 插画生成会显示 DeepSeek 解析出的意图类型、生图模式、请求状态、失败原因和 SVG 安全清洗统计。
 
 如果系统需要进一步确认，会在右侧显示“等待补充”。这时用户可以继续用下一句语音补充，不需要鼠标或键盘，例如先说“画一个神秘角色”，系统询问后再说“戴红帽子的猫”。
 
-AI 返回内容必须符合项目内置 JSON 规范：固定格式为 `{ "schemaVersion": "1.0", "intent": { ... } }`。应用会重新校验图形类型、颜色、选择器、尺寸、配方数量和意图必填字段；缺少必要字段或包含不安全内容时不会执行。
+AI 返回内容必须符合项目内置 JSON 规范。可编辑配方模式支持 `{ "schemaVersion": "2.0", "intent": { ... } }` 并兼容早期 intent；安全 SVG 插画模式要求 `{ "schemaVersion": "svg-artwork-1.0", "svg": "...", "parts": [...] }`。应用会重新校验图形类型、颜色、选择器、尺寸、配方数量、SVG 标签和属性；缺少必要字段或包含不安全内容时不会执行。
 
-当用户要画“猫、船、人物、云朵”等画布没有内置模板的对象时，DeepSeek 可以返回 `create_asset_recipe`。系统会把配方中的多个基础 SVG 图形组成一个命名素材组，例如“猫”；后续用户可以继续说“选择猫”“把猫向右移动一点”“删除猫”，整组素材会一起被编辑。
+当用户要画“猫、船、人物、云朵”等画布没有内置模板的对象时，默认可编辑配方模式会让 DeepSeek 返回 `create_asset_recipe`。系统会把配方中的多个基础 SVG 图形组成一个命名素材组，例如“猫”；后续用户可以继续说“选择猫”“把猫向右移动一点”“删除猫”，整组素材会一起被编辑。
+
+当用户切换到“安全 SVG 插画模式”时，DeepSeek 会根据用户原话生成完整 SVG 插画。原始 SVG 不会直接渲染，必须先经过本地安全清洗，过滤脚本、外链、危险标签和事件属性，再作为安全 SVG 对象进入画布。
+
+当用户要修改素材局部时，系统会把素材组、局部部件、当前选中范围和最近语音一起发给 AI。AI 只能返回白名单 JSON 指令，例如删除“帽子”局部、替换“窗户”局部或给已有素材组追加新的部件；本地执行器会再次按 `group`/`part` 范围校验，避免“改窗户”误改整个房子。
 
 DeepSeek 也可以在本地规则不确定时返回 `rename_object`、`duplicate_object` 和 `update_text`，分别支持给已有图形改名、复制对象和修改文字内容。
 
 语音绘图引擎还支持把多个对象组织成可编辑素材组，并对多个对象执行对齐和均匀分布。DeepSeek 返回这类意图时也必须使用 `group_objects`、`ungroup_objects`、`align_objects` 或 `distribute_objects` 的白名单结构。
 
-AI 输入输出格式、合法 intent 示例和 DeepSeek 手工联调步骤见 `docs/ai-contract.md`。
+完整设计说明、计划支持能力、最终实现情况和未完成原因见 [docs/design.md](docs/design.md)。AI 输入输出格式、合法 intent 示例和 DeepSeek 手工联调步骤见 [docs/ai-contract.md](docs/ai-contract.md)。
 
 最终功能覆盖、自动化验证和剩余限制见 `docs/qa-report.md`。
 
@@ -90,8 +95,19 @@ AI 输入输出格式、合法 intent 示例和 DeepSeek 手工联调步骤见 `
 - 画一个蓝色圆形和绿色矩形
 - 画一个红色房子和蓝色太阳，再把房子放到最上层
 - 画一只戴帽子的猫
+- 画一只戴帽子的狗
 - 把猫向右移动一点
 - 画一个神秘角色 → 戴红帽子的猫
+- 选择房子的窗户
+- 把房子窗户改成蓝色
+- 把帽子删去不好看
+- 打开设置
+- 切换到 SVG 插画模式
+- 切换到可编辑配方模式
+- 把模型改成 deepseek-v4-pro
+- 测试 AI 连接
+- 打开状态信息
+- 关闭设置
 - 月亮换个梦幻感
 - 我能说什么
 - 画布里有什么

@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { isAiIntentPayload, resolveDeepSeekIntent } from './src/ai/deepSeekIntentProxy';
+import { isAiIntentPayload, resolveDeepSeekIntent, resolveDeepSeekSvgArtwork } from './src/ai/deepSeekIntentProxy';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -27,7 +27,14 @@ const deepSeekIntentProxy = (env: Record<string, string>): Plugin => ({
           return;
         }
 
-        sendJson(response, 200, await resolveDeepSeekIntent(payload, env));
+        const proxyEnv = readAiProxyEnv(env, bodyRequest.headers);
+        sendJson(
+          response,
+          200,
+          payload.generationMode === 'safe-svg-artwork'
+            ? await resolveDeepSeekSvgArtwork(payload, proxyEnv)
+            : await resolveDeepSeekIntent(payload, proxyEnv)
+        );
       } catch {
         sendJson(response, 200, { ok: false, provider: 'deepseek', reason: 'AI 指令解析请求失败。' });
       }
@@ -37,6 +44,7 @@ const deepSeekIntentProxy = (env: Record<string, string>): Plugin => ({
 
 type RequestBodyLike = {
   method?: string;
+  headers?: Record<string, string | string[] | undefined>;
   setEncoding: (encoding: string) => void;
   on: (event: string, callback: (chunk?: string) => void) => void;
 };
@@ -56,4 +64,16 @@ const sendJson = (response: { statusCode: number; setHeader: (name: string, valu
   response.statusCode = status;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
   response.end(JSON.stringify(body));
+};
+
+const readAiProxyEnv = (env: Record<string, string>, headers: RequestBodyLike['headers'] = {}) => ({
+  DEEPSEEK_API_KEY: readHeader(headers, 'x-speak2draw-session-key') || env.DEEPSEEK_API_KEY,
+  DEEPSEEK_BASE_URL: readHeader(headers, 'x-speak2draw-base-url') || env.DEEPSEEK_BASE_URL,
+  DEEPSEEK_MODEL: readHeader(headers, 'x-speak2draw-model') || env.DEEPSEEK_MODEL,
+  DEEPSEEK_TIMEOUT_MS: readHeader(headers, 'x-speak2draw-timeout-ms') || env.DEEPSEEK_TIMEOUT_MS
+});
+
+const readHeader = (headers: RequestBodyLike['headers'], name: string) => {
+  const value = headers?.[name] ?? headers?.[name.toLowerCase()];
+  return Array.isArray(value) ? value[0] : value;
 };

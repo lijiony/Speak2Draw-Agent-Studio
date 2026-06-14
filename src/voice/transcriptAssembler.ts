@@ -38,7 +38,11 @@ export class TranscriptAssembler {
     return this.committed;
   }
 
-  commit(candidate: TranscriptCandidate | null, committedAt: number): VoiceTranscript | null {
+  commit(
+    candidate: TranscriptCandidate | null,
+    committedAt: number,
+    metadata: Partial<Pick<VoiceTranscript, 'source' | 'utteranceId' | 'startedAt' | 'stabilityMs'>> = {}
+  ): VoiceTranscript | null {
     if (!candidate || this.committed) return null;
     this.committed = true;
     this.latestInterim = null;
@@ -46,7 +50,12 @@ export class TranscriptAssembler {
       text: candidate.text,
       confidence: candidate.confidence,
       receivedAt: committedAt,
-      isFinal: candidate.isFinal
+      isFinal: candidate.isFinal,
+      source: metadata.source ?? (candidate.isFinal ? 'final' : 'interim-fallback'),
+      utteranceId: metadata.utteranceId,
+      startedAt: metadata.startedAt,
+      committedAt,
+      stabilityMs: metadata.stabilityMs
     };
   }
 }
@@ -69,7 +78,7 @@ export const createTranscriptCandidate = (
 
 const normalizeConfidence = (confidence: number, isFinal: boolean) => {
   if (Number.isFinite(confidence) && confidence > 0) return confidence;
-  return isFinal ? 0.9 : 0.85;
+  return isFinal ? 0.9 : 0.5;
 };
 
 const isShorterContainedText = (nextText: string, previousText: string) =>

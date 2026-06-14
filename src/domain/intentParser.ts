@@ -1,4 +1,4 @@
-import type { DrawingIntent, ObjectSelector, ShapeKind, VoiceTranscript } from './types';
+import type { DrawingIntent, ObjectSelector, PrimitiveShapeKind, VoiceTranscript } from './types';
 import { includesAny, normalizeVoiceText } from './voiceText';
 
 const COLORS: Record<string, string> = {
@@ -24,7 +24,7 @@ const COLORS: Record<string, string> = {
   粉色: '#ec4899'
 };
 
-const SHAPES: Array<[string, ShapeKind]> = [
+const SHAPES: Array<[string, PrimitiveShapeKind]> = [
   ['三角形', 'triangle'],
   ['矩形', 'rectangle'],
   ['长方形', 'rectangle'],
@@ -39,6 +39,8 @@ const SHAPES: Array<[string, ShapeKind]> = [
   ['文字', 'text'],
   ['文本', 'text']
 ];
+
+const PART_NAMES = ['房子窗户', '窗户', '窗', '房子门', '门', '屋顶', '墙体', '帽檐', '帽子', '眼睛', '左眼', '右眼', '耳朵', '左耳', '右耳', '鼻子', '脸', '头部', '身体'];
 
 export const parseIntent = (transcript: VoiceTranscript): DrawingIntent => {
   const rawText = transcript.text.trim();
@@ -71,24 +73,17 @@ const parseNormalizedIntent = (rawText: string, text: string, allowSequence: boo
     if (sequence) return sequence;
   }
 
-  if (/(删除|删掉|移除|去掉|擦掉)/.test(text)) {
+  if (/(删除|删掉|删去|移除|去掉|擦掉)/.test(text)) {
     return { type: 'delete_object', rawText, selector: detectTargetSelector(text, true) };
   }
 
   if (/(选择|选中|选一下|找到|定位到)/.test(text)) {
-    const shape = detectShape(text);
-    const color = detectColor(text);
-    const name = detectObjectName(text);
     return {
       type: 'select_object',
       rawText,
       selector: text.includes('最后') || text.includes('刚才')
         ? { mode: 'last' }
-        : shape || color
-          ? { mode: 'by_shape_color', shape, color }
-          : name
-            ? { mode: 'by_name', name }
-            : { mode: 'selected' }
+        : detectTargetSelector(text, true)
     };
   }
 
@@ -175,23 +170,27 @@ export const detectColor = (text: string) => {
 export const detectShape = (text: string) => SHAPES.find(([label]) => text.includes(label))?.[1];
 
 const detectObjectName = (text: string) => {
+  const partName = detectPartObjectName(text);
+  if (partName) return partName;
   if (includesAny(text, ['房子', '房屋', '小屋', '屋子'])) return '房子';
   if (text.includes('太阳')) return '太阳';
   if (text.includes('树')) return '树';
   if (text.includes('机器人')) return '机器人';
   const customName = extractTargetName(text) ?? extractCustomName(text);
+  if (customName && (detectShape(customName) || detectColor(customName))) return undefined;
   if (customName && !isPronoun(customName)) return customName;
   return undefined;
 };
 
 const detectTargetSelector = (text: string, allowShapeColor: boolean): ObjectSelector => {
+  const scope = detectTargetScope(text);
   const name = detectObjectName(text);
-  if (name) return { mode: 'by_name', name };
-  if (!allowShapeColor) return { mode: 'selected' };
+  if (name) return { mode: 'by_name', name, ...(scope ? { scope } : {}) };
+  if (!allowShapeColor) return { mode: 'selected', ...(scope ? { scope } : {}) };
 
   const shape = detectShape(text);
   const color = detectColor(text);
-  return shape || color ? { mode: 'by_shape_color', shape, color } : { mode: 'selected' };
+  return shape || color ? { mode: 'by_shape_color', shape, color, ...(scope ? { scope } : {}) } : { mode: 'selected', ...(scope ? { scope } : {}) };
 };
 
 const detectMultiTargetSelector = (text: string): ObjectSelector => {
@@ -199,7 +198,10 @@ const detectMultiTargetSelector = (text: string): ObjectSelector => {
 
   const names = extractTargetNames(text);
   if (names.length > 1) return { mode: 'by_names', names };
-  if (names.length === 1) return { mode: 'by_name', name: names[0] };
+  if (names.length === 1) {
+    const scope = detectTargetScope(text);
+    return { mode: 'by_name', name: names[0], ...(scope ? { scope } : {}) };
+  }
   return detectTargetSelector(text, true);
 };
 
@@ -281,8 +283,8 @@ const extractCustomName = (text: string) => {
 };
 
 const extractTargetName = (text: string) => {
-  const byPrefix = text.match(/(?:选择|选中|选一下|找到|定位到|删除|删掉|移除|去掉|擦掉|放大|缩小|复制|再复制|再来一个|拷贝|克隆)([^，。,.、\s]+)/);
-  const byObjectMarker = text.match(/(?:把|将)(.+?)(?:改名|重命名|名字改成|名称改成|名字叫|名称叫|命名为|命名成|叫做|叫成|文字改成|文本改成|内容改成|改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点|复制|再复制|再来一个|拷贝|克隆|移动|挪|放到|移到|左移|右移|上移|下移|放大|变大|缩小|变小|置顶|顶层|最上层|最前面|置底|底层|最下层|最后面|前移|后移|删除|删掉|移除|去掉|擦掉)/);
+  const byPrefix = text.match(/(?:选择|选中|选一下|找到|定位到|删除|删掉|删去|移除|去掉|擦掉|放大|缩小|复制|再复制|再来一个|拷贝|克隆)([^，。,.、\s]+)/);
+  const byObjectMarker = text.match(/(?:把|将)(.+?)(?:改名|重命名|名字改成|名称改成|名字叫|名称叫|命名为|命名成|叫做|叫成|文字改成|文本改成|内容改成|改成|换成|变成|变为|涂成|填充|颜色|描边|线条加粗|加粗|细一点|复制|再复制|再来一个|拷贝|克隆|移动|挪|放到|移到|左移|右移|上移|下移|放大|变大|缩小|变小|置顶|顶层|最上层|最前面|置底|底层|最下层|最后面|前移|后移|删除|删掉|删去|移除|去掉|擦掉)/);
   return sanitizeName(byPrefix?.[1] ?? byObjectMarker?.[1]);
 };
 
@@ -295,6 +297,20 @@ const sanitizeName = (name?: string) => {
     .replace(/(图形|对象)$/, '');
   return value && !isPronoun(value) ? value : undefined;
 };
+
+const detectTargetScope = (text: string): ObjectSelector['scope'] | undefined => {
+  if (/(整个|整只|整座|整棵|整条|全部|全都|一整|素材组|整组|整体)/.test(text)) return 'group';
+  if (hasPartSignal(text)) return 'part';
+  return undefined;
+};
+
+const detectPartObjectName = (text: string) => {
+  const explicit = extractTargetName(text);
+  if (explicit && hasPartSignal(explicit)) return explicit;
+  return PART_NAMES.find((name) => text.includes(name));
+};
+
+const hasPartSignal = (text: string) => PART_NAMES.some((name) => text.includes(name)) || /(局部|部件)/.test(text);
 
 const isPronoun = (value: string) => ['它', '他', '她', '这个', '那个', '选中', '最后', '刚才'].includes(value);
 

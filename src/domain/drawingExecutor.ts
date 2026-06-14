@@ -6,7 +6,12 @@ export const executeDrawingCommands = (
   scene: SceneState,
   commands: DrawingCommand[],
   transcript: VoiceTranscript,
-  options?: { message?: string; needsClarification?: boolean }
+  options?: {
+    message?: string;
+    needsClarification?: boolean;
+    layoutDiagnostics?: ExecutionResult['layoutDiagnostics'];
+    svgArtworkDiagnostics?: ExecutionResult['svgArtworkDiagnostics'];
+  }
 ): ExecutionResult => {
   if (options?.needsClarification) {
     return {
@@ -15,7 +20,9 @@ export const executeDrawingCommands = (
       scene,
       commandsExecuted: 0,
       latencyMs: measureLatency(transcript),
-      needsClarification: true
+      needsClarification: true,
+      layoutDiagnostics: options?.layoutDiagnostics,
+      svgArtworkDiagnostics: options?.svgArtworkDiagnostics
     };
   }
 
@@ -25,7 +32,9 @@ export const executeDrawingCommands = (
       message: options?.message ?? '已收到语音指令。',
       scene,
       commandsExecuted: 0,
-      latencyMs: measureLatency(transcript)
+      latencyMs: measureLatency(transcript),
+      layoutDiagnostics: options?.layoutDiagnostics,
+      svgArtworkDiagnostics: options?.svgArtworkDiagnostics
     };
   }
 
@@ -40,7 +49,9 @@ export const executeDrawingCommands = (
     scene: nextScene,
     commandsExecuted: commands.length,
     latencyMs: measureLatency(transcript),
-    exportSvg: hasExport ? serializeSceneToSvg(nextScene) : undefined
+    exportSvg: hasExport ? serializeSceneToSvg(nextScene) : undefined,
+    layoutDiagnostics: options?.layoutDiagnostics,
+    svgArtworkDiagnostics: options?.svgArtworkDiagnostics
   };
 };
 

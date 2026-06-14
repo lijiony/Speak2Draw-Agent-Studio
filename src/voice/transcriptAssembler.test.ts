@@ -38,12 +38,33 @@ describe('TranscriptAssembler', () => {
 
   it('提交后会阻止同一轮语音重复执行', () => {
     const assembler = new TranscriptAssembler();
-    const first = assembler.commit(createTranscriptCandidate('撤销', 0.8, 10, true), 50);
+    const first = assembler.commit(createTranscriptCandidate('撤销', 0.8, 10, true), 50, {
+      utteranceId: 'utt-1',
+      startedAt: 5
+    });
     const second = assembler.commit(createTranscriptCandidate('重做', 0.8, 20, true), 60);
 
-    expect(first).toMatchObject({ text: '撤销', receivedAt: 50, isFinal: true });
+    expect(first).toMatchObject({ text: '撤销', receivedAt: 50, isFinal: true, source: 'final', utteranceId: 'utt-1', committedAt: 50 });
     expect(second).toBeNull();
     expect(assembler.hasCommitted()).toBe(true);
+  });
+
+  it('中间识别兜底不会默认伪装成高置信度最终文本', () => {
+    const assembler = new TranscriptAssembler();
+    const interim = createTranscriptCandidate('删除帽子', 0, 20, false);
+    const committed = assembler.commit(interim, 80, {
+      utteranceId: 'utt-2',
+      startedAt: 10,
+      stabilityMs: 60
+    });
+
+    expect(committed).toMatchObject({
+      text: '删除帽子',
+      confidence: 0.5,
+      source: 'interim-fallback',
+      utteranceId: 'utt-2',
+      stabilityMs: 60
+    });
   });
 
   it('重置后可以进入下一轮语音', () => {

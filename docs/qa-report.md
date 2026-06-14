@@ -2,8 +2,8 @@
 
 ## 总结
 
-- 日期：2026-06-12
-- 范围：纯语音绘图工作台、DeepSeek AI 兜底、语音稳定性、指令能力、画布组织能力、生产 AI 代理和 CI 质量门禁。
+- 日期：2026-06-13
+- 范围：纯语音绘图工作台、DeepSeek AI 兜底、局部部件编辑、AI 设置页、语音稳定性、指令能力、画布组织能力、生产 AI 代理和 CI 质量门禁。
 - 结论：当前 main 已具备可演示、可测试、可继续迭代的成熟项目基础。
 - 健康分数：94/100。
 
@@ -21,6 +21,9 @@
 | 复杂指令 | 支持房子、太阳、树、机器人和普通多图形组合拆解 |
 | AI 兜底 | 本地规则不确定时可调用 DeepSeek 返回安全结构化意图 |
 | 缺失元素 | 支持 `create_asset_recipe`，把猫、船、云等拆成安全矢量素材组 |
+| 局部编辑 | 支持 `group/part` 选择粒度，可选择房子窗户、删除小猫帽子且保留整组其他部件 |
+| AI 设置 | 支持三栏设置页、模型切换、base URL、timeout、会话 key、AI 连接测试和语音打开/关闭 |
+| 前端滚动 | 左侧控制栏、画布主区、状态浮层和设置页三栏均使用独立滚动，不带动整个页面 |
 | 多轮澄清 | 支持 AI 返回澄清问题，下一句语音携带上下文继续执行 |
 | 语音稳定性 | 支持快速、均衡、耐心三档端点策略和诊断快照 |
 | 生产代理 | 支持 Netlify Function `/api/ai/intent` 持有 DeepSeek API Key |
@@ -32,14 +35,20 @@
 
 ```bash
 npm test
-# 15 个测试文件，105 个测试通过
+# 16 个测试文件，118 个测试通过
 
 npm run build
 # TypeScript 构建和 Vite 生产构建通过
 
 npm run test:e2e
-# 17 条 Playwright 端到端测试通过
+# 28 条 Playwright 端到端测试通过
 ```
+
+真实 AI 联调结果：
+
+- `deepseek-v4-flash`：`画一个戴帽子的猫` 返回 `create_asset_recipe`，通过本地安全校验。
+- `deepseek-v4-flash`：带小猫资产树执行 `把帽子删去不好看` 返回 `revise_asset_part`，`selector.scope = part`。
+- `deepseek-v4-pro`：模型切换后 `画一个红色圆形` 返回 `create_shape`，通过本地安全校验。
 
 远程验证结果：
 
@@ -68,9 +77,11 @@ npm run test:e2e
 
 ## 安全检查
 
-- 未提交 `.env.local`、token、密钥或账号密码。
-- DeepSeek API Key 只通过本地 `.env.local` 或 Netlify 环境变量读取。
-- 浏览器端只调用 `/api/ai/intent`，不接触 DeepSeek API Key。
+- 未提交 `.env`、token、密钥或账号密码。
+- DeepSeek API Key 只通过本地 `.env`、本次会话内存 key 或 Netlify 环境变量读取。
+- 推荐路径下浏览器端只调用 `/api/ai/intent`，不接触服务端环境变量中的 DeepSeek API Key。
+- 设置页的本次会话 key 只存在于当前标签页内存和同源请求头中，不会写入 localStorage、执行记录、状态面板或测试快照；E2E 已验证页面文本和 public test snapshot 不含输入的 session key。
+- 代理只允许 `https://api.deepseek.com`，模型限制为 `deepseek-v4-flash` 或 `deepseek-v4-pro`，timeout 被限制在安全范围内。
 - AI 只能返回白名单 JSON 意图，不能直接执行代码、DOM、HTML、任意 SVG 或 path。
 - AI 返回内容会校验 intent 类型、图形类型、颜色、尺寸、选择器、配方数量、对齐方式和分布轴。
 - `AGENTS.md` 保持 ignored，本地存在但不提交到远程仓库。
@@ -81,7 +92,6 @@ npm run test:e2e
 - 真实 DeepSeek 调用需要用户在本地或部署平台配置环境变量。
 - 生产代理当前优先支持 Netlify Functions；其他部署平台需要新增适配。
 - 当前缺失元素生成采用安全矢量配方，不直接生成 PNG/JPEG 图片素材。
-- 未做前端视觉优化；本阶段只验证功能、稳定性、安全和文档完整性。
 - 未做 AI 配方打分，避免引入与当前目标无关的评价链路。
 
 ## 下一步建议

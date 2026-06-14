@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, applyCommandsAsTransaction, createEmptyScene, createSceneObject } from './sceneModel';
+import type { SvgArtworkData } from './types';
 
 describe('sceneModel', () => {
   it('支持创建、移动、撤销和重做', () => {
@@ -91,6 +92,161 @@ describe('sceneModel', () => {
 
     expect(updated.objects.map((object) => object.style.fill)).toEqual(['#ec4899', '#ec4899']);
     expect(deleted.objects).toHaveLength(0);
+  });
+
+  it('支持在素材组内选择和编辑局部部件', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', {
+          id: 'shape-1',
+          name: '房子墙体',
+          groupId: 'asset-house',
+          groupName: '房子',
+          partId: 'part-wall',
+          partName: '墙体',
+          x: 100,
+          fill: '#fef3c7'
+        })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', {
+          id: 'shape-2',
+          name: '房子窗户',
+          groupId: 'asset-house',
+          groupName: '房子',
+          partId: 'part-window',
+          partName: '窗户',
+          x: 140,
+          fill: '#bfdbfe'
+        })
+      }
+    ]);
+
+    const selectedWindow = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '房子窗户', scope: 'part' } });
+    const movedWindow = applyCommand(selectedWindow, { type: 'move_object', selector: { mode: 'selected' }, direction: 'right' });
+    const coloredWindow = applyCommand(movedWindow, {
+      type: 'update_object',
+      selector: { mode: 'selected' },
+      updates: { style: { fill: '#2563eb' } }
+    });
+
+    expect(selectedWindow.selection).toMatchObject({ scope: 'part', objectId: 'shape-2' });
+    expect(movedWindow.objects.find((object) => object.id === 'shape-2')?.x).toBeGreaterThan(140);
+    expect(movedWindow.objects.find((object) => object.id === 'shape-1')?.x).toBe(100);
+    expect(coloredWindow.objects.find((object) => object.id === 'shape-2')?.style.fill).toBe('#2563eb');
+    expect(coloredWindow.objects.find((object) => object.id === 'shape-1')?.style.fill).toBe('#fef3c7');
+  });
+
+  it('删除复合局部部件时保留同组其他对象', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', { id: 'shape-1', name: '小猫脸', groupId: 'asset-cat', groupName: '小猫', partId: 'part-face', partName: '脸' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-2', name: '小猫帽檐', groupId: 'asset-cat', groupName: '小猫', partId: 'part-hat', partName: '帽子' })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', { id: 'shape-3', name: '小猫帽子', groupId: 'asset-cat', groupName: '小猫', partId: 'part-hat', partName: '帽子' })
+      }
+    ]);
+
+    const deletedHat = applyCommand(scene, { type: 'delete_object', selector: { mode: 'by_part_name', name: '帽子', withinGroupName: '小猫' } });
+
+    expect(deletedHat.objects.map((object) => object.name)).toEqual(['小猫脸']);
+  });
+
+  it('支持选择、改色和删除安全 SVG 插画局部', () => {
+    const artwork: SvgArtworkData = {
+      name: '戴帽子的小猫',
+      viewBox: '0 0 960 600',
+      safeMarkup:
+        '<g id="cat-hat" data-part-name="帽子"><rect x="420" y="120" width="120" height="70" fill="#ef4444"/></g><g id="cat-face" data-part-name="脸"><circle cx="480" cy="300" r="90" fill="#f8fafc"/></g>',
+      parts: [
+        { id: 'cat-hat', partName: '帽子', role: 'accessory', editable: true, bounds: { x: 420, y: 120, width: 120, height: 70 } },
+        { id: 'cat-face', partName: '脸', role: 'body', editable: true, bounds: { x: 390, y: 210, width: 180, height: 180 } }
+      ],
+      diagnostics: {
+        generationMode: 'safe-svg-artwork',
+        schemaVersion: 'svg-artwork-1.0',
+        sanitizerStatus: 'accepted',
+        sanitizedElementCount: 4,
+        droppedElementCount: 0,
+        droppedAttributeCount: 0,
+        partCount: 2,
+        safeMarkupLength: 220,
+        warnings: []
+      }
+    };
+    const scene = applyCommand(createEmptyScene(), {
+      type: 'create_object',
+      object: createSceneObject('svg_artwork', {
+        id: 'artwork-1',
+        name: '戴帽子的小猫',
+        groupId: 'asset-svg-cat',
+        groupName: '戴帽子的小猫',
+        svgArtwork: artwork
+      })
+    });
+
+    const selectedHat = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '帽子', scope: 'part' } });
+    const recoloredHat = applyCommand(selectedHat, {
+      type: 'update_object',
+      selector: { mode: 'selected' },
+      updates: { style: { fill: '#2563eb' } }
+    });
+    const deletedHat = applyCommand(recoloredHat, { type: 'delete_object', selector: { mode: 'by_name', name: '帽子', scope: 'part' } });
+
+    expect(selectedHat.selection).toMatchObject({ scope: 'part', partId: 'cat-hat', partName: '帽子' });
+    expect(recoloredHat.objects[0].svgArtwork?.safeMarkup).toContain('#2563eb');
+    expect(deletedHat.objects).toHaveLength(1);
+    expect(deletedHat.objects[0].svgArtwork?.safeMarkup).not.toContain('cat-hat');
+    expect(deletedHat.objects[0].svgArtwork?.safeMarkup).toContain('cat-face');
+    expect(deletedHat.objects[0].svgArtwork?.parts.map((part) => part.partName)).toEqual(['脸']);
+  });
+
+  it('整组选中时显式局部范围只会作用于锚点部件', () => {
+    const scene = applyCommandsAsTransaction(createEmptyScene(), [
+      {
+        type: 'create_object',
+        object: createSceneObject('circle', {
+          id: 'shape-1',
+          name: '小猫脸',
+          groupId: 'asset-cat',
+          groupName: '小猫',
+          partId: 'part-face',
+          partName: '脸',
+          fill: '#f9fafb'
+        })
+      },
+      {
+        type: 'create_object',
+        object: createSceneObject('rectangle', {
+          id: 'shape-2',
+          name: '小猫帽子',
+          groupId: 'asset-cat',
+          groupName: '小猫',
+          partId: 'part-hat',
+          partName: '帽子',
+          fill: '#ef4444'
+        })
+      }
+    ]);
+
+    const selectedGroup = applyCommand(scene, { type: 'select_object', selector: { mode: 'by_name', name: '小猫' } });
+    const updatedAnchorPart = applyCommand(selectedGroup, {
+      type: 'update_object',
+      selector: { mode: 'selected', scope: 'part' },
+      updates: { style: { fill: '#2563eb' } }
+    });
+
+    expect(selectedGroup.selection).toMatchObject({ scope: 'group', groupId: 'asset-cat', anchorObjectId: 'shape-2' });
+    expect(updatedAnchorPart.objects.find((object) => object.name === '小猫帽子')?.style.fill).toBe('#2563eb');
+    expect(updatedAnchorPart.objects.find((object) => object.name === '小猫脸')?.style.fill).toBe('#f9fafb');
   });
 
   it('支持把多个对象成组并取消成组', () => {

@@ -43,4 +43,10 @@ describe('mapSpeechError', () => {
     const info = mapSpeechError('no-transcript');
     expect(info.title).toContain('没有返回识别文字');
   });
+
+  it('识别语音识别启动超时错误', () => {
+    const info = mapSpeechError('speech-start-timeout');
+    expect(info.title).toContain('启动超时');
+    expect(info.action).toContain('重试');
+  });
 });

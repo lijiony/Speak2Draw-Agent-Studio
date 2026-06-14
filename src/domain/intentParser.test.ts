@@ -47,6 +47,24 @@ describe('parseIntent', () => {
     expect(intent.selector?.name).toBe('房子');
   });
 
+  it('解析素材组内局部选择和编辑目标', () => {
+    const selectedWindow = parseIntent(transcript('选择房子窗户'));
+    expect(selectedWindow.type).toBe('select_object');
+    expect(selectedWindow.selector).toMatchObject({ mode: 'by_name', name: '房子窗户', scope: 'part' });
+
+    const coloredWindow = parseIntent(transcript('把房子窗户改成蓝色'));
+    expect(coloredWindow.type).toBe('update_style');
+    expect(coloredWindow.selector).toMatchObject({ mode: 'by_name', name: '房子窗户', scope: 'part' });
+    expect(coloredWindow.color).toBe('#2563eb');
+
+    const deleteHat = parseIntent(transcript('把猫帽子删去不好看'));
+    expect(deleteHat.type).toBe('delete_object');
+    expect(deleteHat.selector).toMatchObject({ mode: 'by_name', name: '帽子', scope: 'part' });
+
+    const wholeHouse = parseIntent(transcript('选择整个房子'));
+    expect(wholeHouse.selector).toMatchObject({ mode: 'by_name', name: '房子', scope: 'group' });
+  });
+
   it('支持按自定义对象名称选择和编辑', () => {
     const selected = parseIntent(transcript('选择月亮'));
     expect(selected.type).toBe('select_object');

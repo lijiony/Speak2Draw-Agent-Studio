@@ -11,6 +11,14 @@ export const serializeSceneToSvg = (scene: SceneState) => {
 
 const renderObjectToMarkup = (object: SceneObject) => {
   const style = `fill="${escapeAttr(object.style.fill)}" stroke="${escapeAttr(object.style.stroke)}" stroke-width="${object.style.strokeWidth}"`;
+  if (object.kind === 'svg_artwork' && object.svgArtwork) {
+    const [viewX, viewY, viewWidth, viewHeight] = parseViewBox(object.svgArtwork.viewBox);
+    const scaleX = object.width / viewWidth;
+    const scaleY = object.height / viewHeight;
+    return `<g data-kind="safe-svg-artwork" data-name="${escapeAttr(object.svgArtwork.name)}" transform="translate(${object.x} ${object.y}) scale(${scaleX} ${scaleY}) translate(${-viewX} ${-viewY})">
+    ${object.svgArtwork.safeMarkup}
+  </g>`;
+  }
   if (object.kind === 'circle') {
     const radius = Math.min(object.width, object.height) / 2;
     return `<circle cx="${object.x + radius}" cy="${object.y + radius}" r="${radius}" ${style}/>`;
@@ -33,3 +41,7 @@ const renderObjectToMarkup = (object: SceneObject) => {
 
 const escapeAttr = (value: string) => value.replace(/"/g, '&quot;');
 const escapeText = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const parseViewBox = (viewBox: string): [number, number, number, number] => {
+  const parts = viewBox.trim().split(/\s+/).map(Number);
+  return parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0 ? [parts[0], parts[1], parts[2], parts[3]] : [0, 0, CANVAS_WIDTH, CANVAS_HEIGHT];
+};
